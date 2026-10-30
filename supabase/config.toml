@@ -1,0 +1,36 @@
+# Minimal Supabase CLI config. Run `supabase init` to regenerate a full one if needed.
+project_id = "smaran"
+
+[functions.dispatch-reminders]
+verify_jwt = false   # called by pg_cron with x-cron-secret instead of a user JWT
+
+[functions.extract-prescription]
+verify_jwt = true
+
+[functions.elevenlabs-session]
+verify_jwt = true
+
+[functions.tts]
+verify_jwt = true
+
+[functions.extraction-job]
+verify_jwt = true
+
+[functions.reminders]
+verify_jwt = true
+
+# ── Auth: email + password with email verification. Phone sign-up is NOT offered. ──
+[auth]
+site_url = "http://localhost:5173"                       # set to your deployed URL in the dashboard (Authentication → URL configuration)
+additional_redirect_urls = ["http://localhost:5173"]      # add https://<your-app>.vercel.app here
+minimum_password_length = 8
+enable_signup = true
+
+[auth.email]
+enable_signup = true
+enable_confirmations = true                               # users must open the emailed link before they can sign in
+double_confirm_changes = true
+secure_password_change = true
+
+[auth.sms]
+enable_signup = false                                     # a phone number is never a sign-up credential
