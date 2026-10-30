@@ -8,9 +8,9 @@ import { handleUtterance, type Convo, type Outcome } from './brain'
 import { msg, supportsReplies, type Line } from './messages'
 import { startRing, stopRing } from './ringtone'
 import { cancelSpeech, recognitionSupported, startRecognition, synthesisSupported, type Recognition, type RecognitionError } from './speech'
+import { playSathiLine, reminderVoicePersona, stopSathiAudio } from './playback'
 import { displayName } from '../domain/medicines'
 import { RING_TIMEOUT_SEC } from '../domain/reminders'
-import { backendConfigured } from '../services/backend'
 import { startAgent, type AgentController } from '../services/elevenlabsAgent'
 import { inQuietHours } from '../domain/quiet'
 
@@ -31,6 +31,7 @@ export interface VoiceSnapshot {
   muted: boolean
   textMode: boolean
   error: VoiceError | null
+  playbackError: string | null
   seconds: number
   outcome?: Outcome
   ringStatus: 'none' | 'playing' | 'blocked' | 'unsupported' | 'quiet'
@@ -39,7 +40,7 @@ export interface VoiceSnapshot {
 
 const blank = (): VoiceSnapshot => ({
   state: 'idle', active: false, incoming: false, mode: 'assistant', title: '', lines: [], interim: '', speaking: '', muted: false,
-  textMode: false, error: null, seconds: 0, ringStatus: 'none',
+  textMode: false, error: null, playbackError: null, seconds: 0, ringStatus: 'none',
   supports: { recognition: recognitionSupported(), synthesis: synthesisSupported(), replies: true },
 })
 
@@ -72,7 +73,7 @@ class VoiceSession {
 
   private teardown() {
     this.gen++
-    stopRing(); cancelSpeech()
+    stopRing(); cancelSpeech(); stopSathiAudio()
     void this.agent?.end().catch(() => undefined); this.agent = null
     this.rec?.abort(); this.rec = null
     if (this.tickTimer) { clearInterval(this.tickTimer); this.tickTimer = null }
@@ -94,7 +95,7 @@ class VoiceSession {
     const quiet = inQuietHours()
     const ringStatus = quiet ? 'quiet' as const : startRing(this.settings().reminderTone)
     const g = this.gen
-    this.snap = { ...blank(), active: true, incoming: true, mode: 'reminder', reminderId, title: r.kind === 'medicine' ? `Time for ${r.title}` : r.title, // (the person is named in the greeting) ringStatus,
+    this.snap = { ...blank(), active: true, incoming: true, mode: 'reminder', reminderId, title: r.kind === 'medicine' ? `Time for ${r.title}` : r.title, ringStatus,
       supports: { ...blank().supports, replies: supportsReplies(this.lang()) } }
     this.listeners.forEach((l) => l())
     A.recordDelivery(reminderId, { at: now().toISOString(), channel: 'incall-ui', outcome: 'delivered', note: `ring=${ringStatus}` })
@@ -177,19 +178,32 @@ class VoiceSession {
   }
 
   // ───────── speaking ─────────
-  /** Sathi's replies are shown as text. No browser or server speech is produced until a live voice provider is integrated. */
+  /** Speak this reminder's line (ElevenLabs TTS when enabled, else the browser). Text stays on screen. Audio never marks medicine taken. */
   private sathiSays(line: Line, then: () => void) {
     const g = this.gen
     this.lastSathi = line
     this.push('sathi', line.text)
-    this.set({ state: 'speaking', speaking: line.text, interim: '' })
-    setTimeout(() => { if (g !== this.gen) return; this.set({ speaking: '' }); then() }, this.snap.muted ? 700 : 1400)
+    this.set({ state: 'speaking', speaking: line.text, interim: '', playbackError: null })
+    cancelSpeech(); stopSathiAudio()
+    const done = () => { if (g !== this.gen) return; this.set({ speaking: '' }); then() }
+    if (this.snap.muted) { setTimeout(done, 700); return }
+    const s = store.get()
+    const rid = this.snap.reminderId
+    const person = rid ? s.people.find((p) => p.id === s.reminders.find((r) => r.id === rid)?.personId) : s.people.find((p) => p.id === s.activePersonId)
+    const persona = reminderVoicePersona(person)
+    const rate = this.settings().speakingSpeed === 'slower' ? 0.8 : 1
+    const self = this
+    const signal = { get aborted() { return g !== self.gen } }
+    void playSathiLine({
+      say: line.say, text: line.text, lang: this.lang(), rate, persona, muted: false, useServer: s.prefs.serverVoice,
+      signal, onError: (m) => { if (g === self.gen) { self.set({ playbackError: m }); self.push('system', m) } },
+    }).then(done)
   }
 
   repeat() {
     if (this.lastSathi) { this.rec?.abort(); this.rec = null; this.sathiSays(this.lastSathi, () => this.listen()) }
   }
-  toggleMute() { this.set({ muted: !this.snap.muted }); this.agent?.setMuted(this.snap.muted); if (this.snap.muted) { cancelSpeech() } }
+  toggleMute() { this.set({ muted: !this.snap.muted }); this.agent?.setMuted(this.snap.muted); if (this.snap.muted) { cancelSpeech(); stopSathiAudio() } }
 
   // ───────── listening ─────────
   private listen() {
@@ -229,7 +243,7 @@ class VoiceSession {
   }
 
   private fail(error: VoiceError) {
-    cancelSpeech(); this.rec?.abort(); this.rec = null
+    cancelSpeech(); stopSathiAudio(); this.rec?.abort(); this.rec = null
     this.set({ state: 'error', error })
   }
 
