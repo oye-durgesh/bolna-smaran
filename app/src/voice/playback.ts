@@ -18,6 +18,7 @@ export async function playSathiLine(input: {
   lang: Lang
   rate: number
   persona: Persona
+  personId?: string
   muted: boolean
   useServer: boolean
   signal?: { aborted: boolean }
@@ -30,6 +31,7 @@ export async function playSathiLine(input: {
       void speakRemote(say, {
         rate: input.rate,
         persona: input.persona,
+        personId: input.personId,
         onEnd: () => resolve('ok'),
         onError: (m) => { input.onError(m); resolve('fail') },
       })

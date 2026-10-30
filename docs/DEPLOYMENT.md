@@ -18,8 +18,9 @@ Nothing in this repository has been deployed. These are the steps to do it.
 | Supabase secrets | `ELEVENLABS_API_KEY` | all ElevenLabs calls | ONE shared key (both agents are in the same workspace). Secret |
 | Supabase secrets | `MUMMY_ELEVENLABS_AGENT_ID` | Mummy's live conversation | Mummy's own agent; see `ELEVENLABS_AGENT.md` |
 | Supabase secrets | `PAPA_ELEVENLABS_AGENT_ID` | Papa's live conversation | Papa's own agent. Must differ from Mummy's |
-| Supabase secrets | `ELEVENLABS_VOICE_ID` | default voice | a normal (not cloned) voice |
-| Supabase secrets | `ELEVENLABS_MOM_VOICE_ID`, `ELEVENLABS_DAD_VOICE_ID` | optional | voices you own or have written permission to use; each person's choice maps to exactly one of these. A missing ID is an error, never a substitute |
+| Supabase secrets | `ELEVENLABS_VOICE_ID` | optional default voice | used only when the speaker is not Mummy or Papa |
+| Supabase secrets | `ELEVENLABS_MOM_VOICE_ID`, `ELEVENLABS_DAD_VOICE_ID` | unused for reminder TTS | do **not** put Agent IDs here; Mummy/Papa voices come from each agent’s dashboard Voice setting |
+| Supabase secrets | `ELEVENLABS_AGENT_USES_CLONED_VOICE` | optional | set `true` only if the agents use cloned voices; licensed library voices do not need this |
 | Supabase secrets | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | push | subject like `mailto:you@example.com` |
 | Supabase secrets | `CRON_SECRET` | scheduler | long random string; also stored in Postgres for pg_cron (step 4) |
 | Supabase secrets | `ALLOWED_ORIGIN` | production | your Vercel URL, e.g. `https://smaran.vercel.app` |

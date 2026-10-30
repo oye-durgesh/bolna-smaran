@@ -12,7 +12,7 @@ holds the public anon key and the public VAPID key.
 | Data + Row Level Security | Postgres (`supabase/migrations`) | `supabase db push` |
 | Scheduled delivery (app closed) | pg_cron → `dispatch-reminders` → Web Push | VAPID keys, `CRON_SECRET`, pg_cron/pg_net |
 | Prescription reading | `extract-prescription` → Sarvam Document AI | `SARVAM_API_KEY` |
-| Sathi's server voice | `tts` → ElevenLabs | `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID` |
+| Sathi's server voice | `tts` → ElevenLabs | `ELEVENLABS_API_KEY`, `MUMMY_ELEVENLABS_AGENT_ID`, `PAPA_ELEVENLABS_AGENT_ID` (Voice ID is read from each agent). Optional `ELEVENLABS_VOICE_ID` for default/self |
 | Live conversation (beta) | `elevenlabs-session` (signed URL) → `@elevenlabs/client` | two ElevenLabs agents + `MUMMY_ELEVENLABS_AGENT_ID` / `PAPA_ELEVENLABS_AGENT_ID` + one `ELEVENLABS_API_KEY` |
 
 > Start with `docs/DEPLOYMENT.md` (the current end-to-end guide, including Vercel). This file is the original background reference; where they differ, `DEPLOYMENT.md` wins.
@@ -59,9 +59,7 @@ Create a **private** agent (signed URLs required). Suggested configuration:
 * Dynamic variables used: `user_name`, `person_label`, `relationship`, `default_language`, `time_zone`, `speaking_speed`, `reminder_title`, `account_holder`.
 
 ## Voices, consent and disclosure
-* Voices are chosen **per person** on that person's page: Default (`ELEVENLABS_VOICE_ID`), Mom (`ELEVENLABS_MOM_VOICE_ID`) or Dad
-  (`ELEVENLABS_DAD_VOICE_ID`). Mom and Dad only work with the user's recorded consent (*Privacy & data → Voice cloning consent*) and only
-  voices you own or have **written permission** to use. A missing or invalid ID is an error; it never falls back to another person's voice.
+* Mummy and Papa reminder speech uses the Voice already set on that person’s conversational agent. Cloning consent is required only for cloned voices (or when `ELEVENLABS_AGENT_USES_CLONED_VOICE=true`), not for ordinary licensed library voices. A missing agent or Voice setting is an error; it never falls back to the other parent.
 * This repo does **not** clone voices. It selects voices that already exist in your ElevenLabs account. Recording and cloning a voice is not built.
 * Sathi is always labelled an AI companion in the UI, and server audio carries `x-ai-voice: true`.
 * Voice recordings are not stored; only short conversation summaries (switchable) are kept.

@@ -41,18 +41,18 @@ describe('playSathiLine', () => {
 
   it('uses ElevenLabs TTS with the requested persona and does not play the browser voice', async () => {
     await playSathiLine(base)
-    expect(speakRemote).toHaveBeenCalledWith('नमस्ते', expect.objectContaining({ persona: 'mom' }))
+    expect(speakRemote).toHaveBeenCalledWith('नमस्ते', expect.objectContaining({ persona: 'mom', personId: undefined }))
     expect(browserSpeak).not.toHaveBeenCalled()
     expect(base.onError).not.toHaveBeenCalled()
   })
-  it('Papa’s persona is sent as dad, not mom', async () => {
-    await playSathiLine({ ...base, persona: 'dad' })
-    expect(speakRemote.mock.calls[0][1].persona).toBe('dad')
+  it('Papa’s persona is sent as dad, not mom, with Papa’s person id', async () => {
+    await playSathiLine({ ...base, persona: 'dad', personId: 'pap' })
+    expect(speakRemote.mock.calls[0][1]).toEqual(expect.objectContaining({ persona: 'dad', personId: 'pap' }))
   })
   it('falls back to the browser voice and reports the error when TTS fails', async () => {
-    speakRemote.mockImplementation((_t: string, o: { onError: (m: string) => void }) => { o.onError("Dad's voice is not set up on the server (ELEVENLABS_DAD_VOICE_ID is missing)."); return Promise.resolve() })
-    await playSathiLine({ ...base, persona: 'dad' })
-    expect(base.onError).toHaveBeenCalledWith(expect.stringMatching(/ELEVENLABS_DAD_VOICE_ID/))
+    speakRemote.mockImplementation((_t: string, o: { onError: (m: string) => void }) => { o.onError("This person’s Sathi agent is not configured on the server."); return Promise.resolve() })
+    await playSathiLine({ ...base, persona: 'dad', personId: 'pap' })
+    expect(base.onError).toHaveBeenCalledWith(expect.stringMatching(/Sathi agent is not configured/))
     expect(browserSpeak).toHaveBeenCalled()
   })
   it('does not generate audio when muted', async () => {

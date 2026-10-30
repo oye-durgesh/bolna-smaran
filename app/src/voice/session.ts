@@ -195,7 +195,7 @@ class VoiceSession {
     const self = this
     const signal = { get aborted() { return g !== self.gen } }
     void playSathiLine({
-      say: line.say, text: line.text, lang: this.lang(), rate, persona, muted: false, useServer: s.prefs.serverVoice,
+      say: line.say, text: line.text, lang: this.lang(), rate, persona, personId: person?.id, muted: false, useServer: s.prefs.serverVoice,
       signal, onError: (m) => { if (g === self.gen) { self.set({ playbackError: m }); self.push('system', m) } },
     }).then(done)
   }

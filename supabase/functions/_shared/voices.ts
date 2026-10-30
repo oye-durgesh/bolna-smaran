@@ -1,32 +1,39 @@
-// Sathi voice selection. Pure (no Deno/Node APIs) so it is shared by Edge Functions, the local dev server and the app tests.
-// Mom and Dad are SEPARATE configured voice IDs. A persona never falls back to another persona's voice:
-// if its ID is missing the caller gets `voice_not_configured` and must use a non-person fallback (the browser voice) or show text.
+// Sathi voice helpers. Pure (no Deno/Node APIs) so Edge Functions, the local dev server and tests share them.
+// Mom and Dad reminder speech uses the Voice ID configured on each conversational agent (resolved server-side).
+// A persona never falls back to another persona's voice.
 export type Persona = 'default' | 'mom' | 'dad'
 export const PERSONAS: Persona[] = ['default', 'mom', 'dad']
 export const isPersona = (v: unknown): v is Persona => typeof v === 'string' && (PERSONAS as string[]).includes(v)
 
-/** The env variable that holds each persona's voice ID. This table is the only mapping between a selection and a voice. */
+/** Optional default-voice secret. Mom/Dad reminder TTS does not use these; it reads the agent’s Voice setting. */
 export const VOICE_ENV: Record<Persona, string> = {
   default: 'ELEVENLABS_VOICE_ID',
   mom: 'ELEVENLABS_MOM_VOICE_ID',
   dad: 'ELEVENLABS_DAD_VOICE_ID',
 }
-/** Voices that imitate a real person need the account holder's recorded consent (and you must hold the right to use the voice). */
-export const NEEDS_CONSENT: Record<Persona, boolean> = { default: false, mom: true, dad: true }
 
 export type VoiceFailure = 'bad_persona' | 'voice_not_configured' | 'consent_required' | 'voice_invalid'
 export type VoiceResolution = { ok: true; persona: Persona; voiceId: string } | { ok: false; persona: Persona | null; code: VoiceFailure; message: string }
 
 const ID_RE = /^[A-Za-z0-9]{10,40}$/
+export const isVoiceId = (id: string) => ID_RE.test(id)
 export const personaLabel = (p: Persona) => (p === 'mom' ? "Mom's" : p === 'dad' ? "Dad's" : 'the default')
 
-export function resolveVoice(personaIn: unknown, env: (k: string) => string | undefined, consent: boolean): VoiceResolution {
+/** Instant Voice Clone / similar categories. Premade, professional and generated library voices are licensed, not clones. */
+export const CLONED_VOICE_CATEGORIES = new Set(['cloned', 'cloned_professional', 'professional_cloned'])
+export const isClonedVoiceCategory = (category: unknown) =>
+  typeof category === 'string' && CLONED_VOICE_CATEGORIES.has(category.trim().toLowerCase())
+
+/** Env-based Voice ID (the default Sathi voice only). Mom/Dad must not use this path. */
+export function resolveVoice(personaIn: unknown, env: (k: string) => string | undefined, _consent = true): VoiceResolution {
   const persona = personaIn === undefined || personaIn === null || personaIn === '' ? 'default' : personaIn
   if (!isPersona(persona)) return { ok: false, persona: null, code: 'bad_persona', message: 'Unknown voice selection.' }
-  const id = (env(VOICE_ENV[persona]) ?? '').trim()
-  if (!id) return { ok: false, persona, code: 'voice_not_configured', message: `${personaLabel(persona)} voice is not set up on the server (${VOICE_ENV[persona]} is missing).` }
-  if (!ID_RE.test(id)) return { ok: false, persona, code: 'voice_invalid', message: `${VOICE_ENV[persona]} does not look like a valid ElevenLabs voice ID.` }
-  if (NEEDS_CONSENT[persona] && !consent) return { ok: false, persona, code: 'consent_required', message: `Voice consent has not been given, so ${personaLabel(persona)} voice cannot be used.` }
+  if (persona !== 'default') {
+    return { ok: false, persona, code: 'voice_not_configured', message: `${personaLabel(persona)} voice is taken from that person’s ElevenLabs agent, not from a Voice ID secret.` }
+  }
+  const id = (env(VOICE_ENV.default) ?? '').trim()
+  if (!id) return { ok: false, persona, code: 'voice_not_configured', message: 'The default voice is not set up on the server (ELEVENLABS_VOICE_ID is missing).' }
+  if (!ID_RE.test(id)) return { ok: false, persona, code: 'voice_invalid', message: 'ELEVENLABS_VOICE_ID does not look like a valid ElevenLabs voice ID.' }
   return { ok: true, persona, voiceId: id }
 }
 

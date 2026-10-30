@@ -12,10 +12,11 @@ export async function remoteVoiceAvailable(): Promise<boolean> {
   return !!(await localHealth())?.elevenlabs.key
 }
 
-async function fetchSpeech(text: string, persona: string): Promise<{ blob: Blob; headers: Headers }> {
-  if (backendConfigured() && (await hasSession())) return callFunctionBlobWithHeaders('tts', { text, persona })
+async function fetchSpeech(text: string, persona: string, personId?: string): Promise<{ blob: Blob; headers: Headers }> {
+  const body = { text, persona, personId }
+  if (backendConfigured() && (await hasSession())) return callFunctionBlobWithHeaders('tts', body)
   // local dev API (no accounts): consent comes from this device's own setting
-  const r = await fetch('/api/tts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, persona, consent: store.get().prefs.voiceCloningConsent }) })
+  const r = await fetch('/api/tts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...body, consent: store.get().prefs.voiceCloningConsent }) })
   if (!r.ok) { let b: { error?: string; code?: string } = {}; try { b = await r.json() } catch { /* */ } throw new BackendError(b.error ?? `Request failed (${r.status})`, r.status, b.code) }
   return { blob: await r.blob(), headers: r.headers }
 }
@@ -29,8 +30,10 @@ export class VoiceError extends Error {
 export function voiceErrorMessage(code: string | undefined, fallback: string): string {
   switch (code) {
     case 'voice_not_configured': return fallback
-    case 'voice_invalid': return 'The selected voice could not be found in ElevenLabs. Check its voice ID.'
-    case 'consent_required': return 'Voice consent is needed before this voice can be used (Privacy settings).'
+    case 'voice_invalid': return 'This person’s ElevenLabs agent has no usable Voice setting. Check the agent in the ElevenLabs dashboard.'
+    case 'agent_not_configured': return 'This person’s Sathi agent is not configured on the server.'
+    case 'agent_invalid': return 'This person’s Sathi agent could not be found in ElevenLabs.'
+    case 'consent_required': return 'Voice consent is needed before a cloned voice can be used (Privacy settings).'
     case 'missing_credentials': return 'The server voice is not set up yet.'
     case 'rate_limit': return 'The voice service is busy. Please try again shortly.'
     case 'persona_mismatch': return 'The server answered with a different voice than the one selected, so it was not played.'
@@ -38,10 +41,10 @@ export function voiceErrorMessage(code: string | undefined, fallback: string): s
   }
 }
 
-export async function speakRemote(text: string, o: { rate: number; persona?: 'default' | 'mom' | 'dad'; onStart?: () => void; onEnd: () => void; onError: (m: string) => void }): Promise<void> {
+export async function speakRemote(text: string, o: { rate: number; persona?: 'default' | 'mom' | 'dad'; personId?: string; onStart?: () => void; onEnd: () => void; onError: (m: string) => void }): Promise<void> {
   const persona = o.persona ?? currentPersona()
   try {
-    const { blob, headers } = await fetchSpeech(text, persona)
+    const { blob, headers } = await fetchSpeech(text, persona, o.personId)
     if (headers.get('x-voice-persona') !== persona) throw new VoiceError(voiceErrorMessage('persona_mismatch', ''), 'persona_mismatch')
     const url = URL.createObjectURL(blob)
     const a = new Audio(url)

@@ -124,7 +124,7 @@ export default function Screen50({ param }: { param?: string }) {
         <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
           {(['default', 'mom', 'dad'] as const).map((v) => <Chip key={v} on={person.sathiVoice === v} onClick={() => set({ sathiVoice: v })}>{v === 'default' ? 'Default' : v === 'mom' ? 'Mom' : 'Dad'}</Chip>)}
         </div>
-        <div style={{ fontSize: 12, color: '#8A7F6A', marginTop: 8, lineHeight: 1.5 }}>Mom and Dad voices need a configured voice and voice consent (Privacy &amp; data). If one is missing, Sathi uses the browser voice and says so — never someone else's voice.</div>
+        <div style={{ fontSize: 12, color: '#8A7F6A', marginTop: 8, lineHeight: 1.5 }}>Mummy and Papa use the voice set on their Sathi agent. Licensed voices do not need cloning consent; cloned voices do (Privacy &amp; data). If a voice is missing, Sathi uses the browser voice and says so — never someone else's voice.</div>
 
         {person.relationship !== 'self' && (
           <Tap onClick={() => confirm({ title: `Archive ${personLabel(person)}?`, message: 'Their medicines, reminders and records are kept. You can restore them later.', confirmLabel: 'Archive', danger: true, onConfirm: () => { archivePerson(person.id); toast('Archived.'); go('14', undefined, { replace: true }) } })}

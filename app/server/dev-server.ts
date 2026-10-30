@@ -49,7 +49,7 @@ createServer(async (req, res) => {
       const b = await readJson(req)
       const text = String(b.text ?? '').trim()
       if (!text || text.length > 600) return send(res, 400, { error: 'Text is missing or too long.', code: 'bad_request' })
-      const r = await synthesize(env, { text, persona: b.persona, consent: b.consent === true })
+      const r = await synthesize(env, { text, persona: b.persona, consent: b.consent === true }) // local: no RLS; deployed tts looks up personId under RLS
       if (!r.ok) return send(res, r.status, r.body)
       res.writeHead(200, { 'Content-Type': 'audio/mpeg', 'x-voice-persona': r.persona, 'Access-Control-Expose-Headers': 'x-voice-persona', 'Cache-Control': 'no-store' })
       return res.end(Buffer.from(await r.audio.arrayBuffer()))

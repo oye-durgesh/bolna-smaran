@@ -32,6 +32,7 @@ describe('client voice selection', () => {
     for (const v of ['mom', 'dad', 'mom', 'default'] as const) { setVoice(v); expect(await speak()).toBeNull() }
     expect(calls.map((c) => c.body.persona)).toEqual(['mom', 'dad', 'mom', 'default'])
     expect(calls.every((c) => c.name === 'tts')).toBe(true)
+    expect(calls.every((c) => 'personId' in c.body)).toBe(true)
   })
   it('discards audio if the server says it used a different persona', async () => {
     setVoice('mom')
@@ -40,12 +41,12 @@ describe('client voice selection', () => {
   })
   it('a missing voice yields a clear message (caller shows it and uses the browser voice, never another person)', async () => {
     setVoice('dad')
-    respond = () => new BackendError("Dad's voice is not set up on the server (ELEVENLABS_DAD_VOICE_ID is missing).", 503, 'voice_not_configured')
-    expect(await speak()).toMatch(/ELEVENLABS_DAD_VOICE_ID/)
+    respond = () => new BackendError("Dad's voice is not set up on the server.", 503, 'voice_not_configured')
+    expect(await speak()).toMatch(/Dad's voice is not set up/)
     respond = () => new BackendError('x', 403, 'consent_required')
     expect(await speak()).toMatch(/consent/i)
     respond = () => new BackendError('x', 502, 'voice_invalid')
-    expect(await speak()).toMatch(/voice ID/)
+    expect(await speak()).toMatch(/Voice setting/)
   })
   it('network failure is reported as an error', async () => {
     respond = () => new Error('Failed to fetch')

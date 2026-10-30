@@ -6,14 +6,14 @@ Each of those profiles has its own agent in the ElevenLabs dashboard (own voice,
 - `elevenlabs-session` receives only a `personId`. It reads that profile as the signed-in user (row-level security), takes the agent from the stored relationship (`mother` → Mummy, `father` → Papa) and asks ElevenLabs for a signed URL with the shared key. It returns `{ signedUrl, agent, personId }`; never the key or an agent ID.
 - No access to the profile → 403. Missing key, missing agent ID, identical IDs, unknown agent, rejected key, outage → a specific error naming the variable. There is never a fallback to the other agent.
 - Only Mummy and Papa have an agent. Self and other profiles get a clear "no dedicated agent" error.
-- The app does not send a per-conversation voice override: each agent speaks with its dashboard voice. The Mom/Dad voice chips in profile settings still apply to the `tts` Edge Function, not to the live agent.
+- The app does not send a per-conversation voice override: each agent speaks with its dashboard voice. Reminder `tts` also uses that same dashboard Voice ID, resolved on the server from the agent.
 - Signed URLs come from `GET https://api.elevenlabs.io/v1/convai/conversation/get-signed-url?agent_id=…` with `xi-api-key` on the server. ElevenLabs documents a ~15 minute start window; live agent behaviour still needs a human check in `LIVE_VERIFICATION.md`.
 
 ## How the pieces fit
 - **Two agents**, already created: Mummy’s and Papa’s. Do not create more.
 - The browser asks the `elevenlabs-session` function for a **signed URL**, sending only `personId`. The function checks the signed-in user, looks up that care recipient under RLS, maps `mother`/`father` to the matching server secret, and returns `{ signedUrl, agent, personId }`.
 - The app starts the conversation with that URL and `dynamicVariables` describing the person (name, relationship, default language, time zone). It does **not** send `overrides.tts.voiceId`.
-- Spoken replies outside a live call still use the `tts` function and `ELEVENLABS_VOICE_ID` / `ELEVENLABS_MOM_VOICE_ID` / `ELEVENLABS_DAD_VOICE_ID`. Those IDs do not change which conversational agent is used.
+- Spoken reminder replies use the `tts` function. For Mummy and Papa the server loads that profile under RLS, reads `MUMMY_ELEVENLABS_AGENT_ID` or `PAPA_ELEVENLABS_AGENT_ID`, then `GET /v1/convai/agents/{agent_id}` and uses `conversation_config.tts.voice_id` for TTS. Voice IDs and Agent IDs stay on the server. Interactive calls still use `elevenlabs-session` signed URLs; the app does not send a TTS voice override.
 - Each session is built from the profile that was active **when it started**. Nothing global holds “the selected agent”.
 
 ## Dashboard configuration (already created; do not add new agents)
