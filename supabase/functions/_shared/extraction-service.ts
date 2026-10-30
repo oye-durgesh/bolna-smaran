@@ -1,10 +1,11 @@
-// Orchestrates a prescription-reading job: validate → submit to Sarvam → (poll) → download ZIP → read primary file → parse → store.
+// Orchestrates a prescription-reading job: validate → submit Extract → poll status → GET results (or Parse ZIP if configured) → map to drafts.
 // Used by the Supabase Edge Functions and by the local dev server. Pure of Deno/Node globals so it is unit-testable.
 import type { ErrorCode, ExtractionJob, ExtractionOutput, JobStore, SarvamState } from './extraction-types.ts'
 import { DOC_LANGUAGES, isDocLanguage, validateUpload } from './extraction-types.ts'
 import { SarvamDocAi, SarvamError } from './sarvam.ts'
 import { OutputError, primaryToText, readPrimaryFile, type Unzip } from './ocr-output.ts'
 import { parsePrescriptionText } from './prescription-parser.ts'
+import { mapExtractResult, toExtractionOutput } from './extract-mapper.ts'
 
 export interface ServiceDeps {
   sarvam: SarvamDocAi
@@ -37,7 +38,7 @@ export async function submitExtraction(d: ServiceDeps, i: SubmitInput): Promise<
   if (bad) throw new ServiceError(bad.code, bad.message, bad.code === 'too_large' ? 413 : 415)
   if (!isDocLanguage(i.language)) throw new ServiceError('bad_request', `Unsupported document language. Use one of: ${DOC_LANGUAGES.map((l) => l.code).join(', ')}.`, 400)
   const t = nowOf(d).toISOString()
-  const fmt = d.outputFormat ?? 'md'
+  const fmt = d.outputFormat ?? (d.sarvam.usesExtract ? 'json' : 'md')
   const job: ExtractionJob = {
     id: idOf(d), ownerId: i.ownerId, provider: 'sarvam', sarvamJobId: null, fileName: i.fileName, mime: i.mime, size: i.size,
     language: i.language, outputFormat: fmt, status: 'submitted', createdAt: t, updatedAt: t,
@@ -77,20 +78,27 @@ export async function advanceExtraction(d: ServiceDeps, id: string, ownerId: str
   if (state === 'failed') return d.jobs.update(id, { status: 'failed', pages, errorCode: 'failed', errorMessage: "The prescription couldn't be read. Try a clearer photo or add medicines manually." })
   if (state === 'rejected') return d.jobs.update(id, { status: 'rejected', pages, errorCode: 'rejected', errorMessage: 'The prescription reader rejected this document (check the file type, page count and your account access).' })
 
-  // completed / partially_completed → fetch and parse the real output
+  // completed / partially_completed → fetch Extract JSON (or Parse ZIP if SARVAM_DOC_JOB_PATH=parse)
   try {
-    const zip = await d.sarvam.downloadZip(job.sarvamJobId)
-    const primary = readPrimaryFile(zip, d.unzip, job.outputFormat)
-    const rawText = primaryToText(primary)
-    const parsed = parsePrescriptionText(rawText)
-    const warnings = [...parsed.warnings]
-    if (state === 'partially_completed') warnings.push(`${pages.failed || 'Some'} page${pages.failed === 1 ? '' : 's'} could not be read, so some medicines may be missing.`)
-    const partial = state === 'partially_completed' || parsed.medicines.some((m) => m.lowConfidence)
-    const result: ExtractionOutput = {
-      provider: 'sarvam', isMock: false, outcome: partial ? 'partial' : 'success', rawText, rawFormat: primary.format,
-      medicines: parsed.medicines, otherInstructions: parsed.otherInstructions, warnings, pages: { total: pages.total, succeeded: pages.succeeded, failed: pages.failed },
+    let result: ExtractionOutput
+    if (d.sarvam.usesExtract) {
+      const out = await d.sarvam.getResults(job.sarvamJobId)
+      const mapped = mapExtractResult({ result: out.result, annotations: out.annotations, pages, partial: state === 'partially_completed' })
+      result = toExtractionOutput(mapped, { partial: state === 'partially_completed', pages: { total: pages.total, succeeded: pages.succeeded, failed: pages.failed } })
+    } else {
+      const zip = await d.sarvam.downloadZip(job.sarvamJobId)
+      const primary = readPrimaryFile(zip, d.unzip, job.outputFormat)
+      const rawText = primaryToText(primary)
+      const parsed = parsePrescriptionText(rawText)
+      const warnings = [...parsed.warnings]
+      if (state === 'partially_completed') warnings.push(`${pages.failed || 'Some'} page${pages.failed === 1 ? '' : 's'} could not be read, so some medicines may be missing.`)
+      const partial = state === 'partially_completed' || parsed.medicines.some((m) => m.lowConfidence)
+      result = {
+        provider: 'sarvam', isMock: false, outcome: partial ? 'partial' : 'success', rawText, rawFormat: primary.format,
+        medicines: parsed.medicines, otherInstructions: parsed.otherInstructions, warnings, pages: { total: pages.total, succeeded: pages.succeeded, failed: pages.failed },
+      }
     }
-    if (parsed.medicines.length === 0) {
+    if (result.medicines.length === 0) {
       return d.jobs.update(id, { status: 'failed', pages, result, errorCode: 'no_medicines', errorMessage: "We read the document but couldn't find any medicines in it. You can compare the text or add medicines manually." })
     }
     return d.jobs.update(id, { status: state, pages, result, retryAfterSec: undefined })

@@ -102,6 +102,10 @@ describe('family profiles (care recipients)', () => {
     await as(A, `update care_recipients set greeting_name = 'Mummy' where id = 'per_mum'`)           // changing how Sathi addresses her…
     expect((await as(A, `select id, relationship from care_recipients where id = 'per_mum'`))[0]).toMatchObject({ id: 'per_mum', relationship: 'mother' }) // …does not change who she is
   })
+  it('an unrelated account cannot read another account’s Mummy or Papa row (what the agent-session function relies on)', async () => {
+    expect(await as(B, `select id from care_recipients where id in ('per_mum','per_papa')`)).toEqual([])
+    expect((await as(A, `select id from care_recipients where id in ('per_mum','per_papa')`)).length).toBe(2)
+  })
   it('duplicate submissions do not create duplicate profiles; a custom relationship needs a label', async () => {
     expect(await asErr(A, person('per_mum2', A, 'mother', '', 'Sunita'))).toMatch(/duplicate|unique/)
     expect(await asErr(A, `insert into care_recipients(id, owner_id, relationship) values ('x','${A}','self')`)).toMatch(/duplicate|unique/)

@@ -2,8 +2,7 @@
  * What the app sends to ElevenLabs when it starts a live Sathi conversation. Pure, so it can be unit-tested.
  *  - dynamicVariables tell the shared agent WHO it is talking to (name, relationship, default language, timezone); they carry
  *    no identifiers a model could use to reach other people's data, and no medical values.
- *  - the voice is requested per conversation with overrides.tts.voiceId (documented override; the agent must have "Voice ID"
- *    enabled under Security). The default persona sends no override, so the agent's own dashboard voice is used.
+ *  - live conversations do not send a voice override; each dedicated agent uses the voice set in the ElevenLabs dashboard.
  *  - no language override is sent: the agent should answer in the language the person speaks (see docs/ELEVENLABS_AGENT.md).
  */
 import type { AppState } from '../domain/types'

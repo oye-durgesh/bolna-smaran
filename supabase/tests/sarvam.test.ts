@@ -1,6 +1,6 @@
 /**
- * Sarvam Document AI integration tests against a local FAKE Sarvam server that follows the documented protocol
- * (parse → status → download-url → ZIP). This proves our client/service logic, not Sarvam's OCR quality — see docs for the live smoke test.
+ * Sarvam Document Intelligence Extract tests against a local FAKE Sarvam server
+ * (extract + schema → status → results + annotations). This proves our client/service logic, not Sarvam's OCR quality.
  */
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
@@ -11,6 +11,8 @@ import { advanceExtraction, cancelExtraction, memoryJobStore, ServiceError, subm
 import { validateUpload } from '../functions/_shared/extraction-types.ts'
 import { htmlToText, jsonToText, markdownToText, primaryToText, readPrimaryFile } from '../functions/_shared/ocr-output.ts'
 import { parsePrescriptionText } from '../functions/_shared/prescription-parser.ts'
+import { mapExtractResult } from '../functions/_shared/extract-mapper.ts'
+import { PRESCRIPTION_EXTRACT_SCHEMA } from '../functions/_shared/prescription-schema.ts'
 
 const RX_MD = `# Dr. A. Sharma, MBBS
 Reg No 12345 | Patient: Ramesh Kumar, 67 y
@@ -26,11 +28,30 @@ Advice: Avoid sugar. Walk 30 minutes daily.`
 const zipOf = (md: string, extra: Record<string, string> = {}) =>
   zipSync({ 'manifest.json': strToU8('{"pages":1}'), 'rx.pdf/rx.md': strToU8(md), 'rx.pdf/metadata/page_001.json': strToU8('{"text":"IGNORE ME"}'), ...Object.fromEntries(Object.entries(extra).map(([k, v]) => [k, strToU8(v)])) })
 
+const leaf = (c: number) => ({ confidence: c, sources: [] })
+const RX_EXTRACT = {
+  patient_name: 'Ramesh Kumar', doctor_name: 'Dr. A. Sharma', prescription_date: '12 Jan 2026',
+  additional_instructions: 'Avoid sugar. Walk 30 minutes daily.', unclear_or_missing: '',
+  medicines: [
+    { name: 'Metformin', strength: '500mg', dosage: '1 tab', frequency: 'BD', intake_timing: '', food_instructions: 'after food', duration: '30 days', additional_instructions: '', unclear_or_missing: '' },
+    { name: 'Amlodipine', strength: '5mg', dosage: '1 tab', frequency: 'OD morning', intake_timing: 'morning', food_instructions: '', duration: 'continue', additional_instructions: '', unclear_or_missing: '' },
+    { name: 'Ecosprin', strength: '75', dosage: '', frequency: 'OD', intake_timing: '', food_instructions: '', duration: '', additional_instructions: '', unclear_or_missing: '' },
+  ],
+}
+const RX_ANN = {
+  patient_name: leaf(0.95), doctor_name: leaf(0.9), prescription_date: leaf(0.8),
+  medicines: [
+    { name: leaf(0.92), strength: leaf(0.9), dosage: leaf(0.88), frequency: leaf(0.9), food_instructions: leaf(0.85), duration: leaf(0.8) },
+    { name: leaf(0.9), strength: leaf(0.9), dosage: leaf(0.88), frequency: leaf(0.85), intake_timing: leaf(0.7) },
+    { name: leaf(0.55), strength: leaf(0.4), frequency: leaf(0.6) },
+  ],
+}
+
 // ───────── fake Sarvam ─────────
-interface Behavior { statuses: Array<'pending' | 'running' | 'completed' | 'partially_completed' | 'failed' | 'rejected'>; submitStatus?: number; statusHttp?: number[]; zip?: Uint8Array; pagesFailed?: number }
+interface Behavior { statuses: Array<'pending' | 'running' | 'completed' | 'partially_completed' | 'failed' | 'rejected'>; submitStatus?: number; statusHttp?: number[]; zip?: Uint8Array; pagesFailed?: number; result?: unknown; annotations?: unknown }
 let server: Server, base = ''
 let beh: Behavior
-const seen: { submit?: { headers: Record<string, unknown>; body: string }; keyOnDownload?: unknown; polls: number } = { polls: 0 }
+const seen: { submit?: { headers: Record<string, unknown>; body: string }; keyOnDownload?: unknown; keyOnResults?: unknown; polls: number } = { polls: 0 }
 
 beforeAll(async () => {
   server = createServer((req, res) => {
@@ -38,10 +59,10 @@ beforeAll(async () => {
     req.on('data', (c) => chunks.push(c))
     req.on('end', () => {
       const url = req.url ?? ''
-      if (req.method === 'POST' && url === '/doc-ai/v1/job/parse') {
+      if (req.method === 'POST' && (url === '/doc-ai/v1/job/extract' || url === '/doc-ai/v1/job/parse')) {
         seen.submit = { headers: req.headers, body: Buffer.concat(chunks).toString('latin1') }
         if (beh.submitStatus) { res.writeHead(beh.submitStatus, { 'Retry-After': '17' }); return res.end('{"error":"x"}') }
-        res.writeHead(200, { 'content-type': 'application/json' }); return res.end(JSON.stringify({ job_id: 'sv_1', status: 'pending' }))
+        res.writeHead(201, { 'content-type': 'application/json' }); return res.end(JSON.stringify({ job_id: 'sv_1', status: 'pending', run_id: 'run_1' }))
       }
       if (url === '/doc-ai/v1/job/sv_1/status') {
         const http = beh.statusHttp?.[seen.polls]
@@ -50,6 +71,16 @@ beforeAll(async () => {
         if (http) { res.writeHead(http, { 'Retry-After': '3' }); return res.end('{}') }
         res.writeHead(200, { 'content-type': 'application/json' })
         return res.end(JSON.stringify({ job_id: 'sv_1', status: st, usage: { pages_total: 2, pages_processed: st === 'pending' ? 0 : 2, pages_succeeded: 2 - (beh.pagesFailed ?? 0), pages_failed: beh.pagesFailed ?? 0 } }))
+      }
+      if (url.startsWith('/doc-ai/v1/job/sv_1/results')) {
+        seen.keyOnResults = req.headers['api-subscription-key']
+        const st = beh.statuses[beh.statuses.length - 1]
+        res.writeHead(200, { 'content-type': 'application/json' })
+        return res.end(JSON.stringify({
+          job_id: 'sv_1', type: 'extract', status: st, version: 1,
+          usage: { pages_total: 2, pages_processed: 2, pages_succeeded: 2 - (beh.pagesFailed ?? 0), pages_failed: beh.pagesFailed ?? 0 },
+          result: beh.result ?? RX_EXTRACT, annotations: beh.annotations ?? RX_ANN,
+        }))
       }
       if (url === '/doc-ai/v1/job/sv_1/download-url') {
         res.writeHead(200, { 'content-type': 'application/json' }); return res.end(JSON.stringify({ method: 'GET', url: `${base}/files/out.zip` }))
@@ -62,7 +93,7 @@ beforeAll(async () => {
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
 })
 afterAll(() => { server.close() })
-beforeEach(() => { beh = { statuses: ['pending', 'running', 'completed'] }; seen.polls = 0; seen.submit = undefined; seen.keyOnDownload = undefined })
+beforeEach(() => { beh = { statuses: ['pending', 'running', 'completed'] }; seen.polls = 0; seen.submit = undefined; seen.keyOnDownload = undefined; seen.keyOnResults = undefined })
 
 const mk = (opts: Partial<{ now: () => Date; maxJobAgeMs: number; apiKey: string | undefined }> = {}) => {
   const jobs = memoryJobStore()
@@ -85,19 +116,28 @@ describe('file validation', () => {
 })
 
 describe('Sarvam client protocol', () => {
-  it('sends language + output_format (not language_code), the key header, and never sends the key to the download URL', async () => {
+  it('POSTs extract with schema + language + json, the key header, and reads results (not a ZIP)', async () => {
     const { deps } = mk()
     const job = await submitExtraction(deps, input)
     expect(job.sarvamJobId).toBe('sv_1')
     expect(seen.submit!.headers['api-subscription-key']).toBe('test-key')
     expect(seen.submit!.body).toMatch(/name="language"\r\n\r\nhi-IN/)
-    expect(seen.submit!.body).toMatch(/name="output_format"\r\n\r\nmd/)
+    expect(seen.submit!.body).toMatch(/name="output_format"\r\n\r\njson/)
+    expect(seen.submit!.body).toMatch(/name="schema"/)
+    expect(seen.submit!.body).toContain('patient_name')
     expect(seen.submit!.body).not.toMatch(/language_code/)
     expect(seen.submit!.body).toMatch(/name="file"; filename="rx.pdf"/)
     let j = job
     for (let i = 0; i < 4 && j.status !== 'completed'; i++) j = await advanceExtraction(deps, job.id, 'u1')
     expect(j.status).toBe('completed')
-    expect(seen.keyOnDownload).toBeUndefined()
+    expect(seen.keyOnResults).toBe('test-key')
+    expect(j.result?.document).toMatchObject({ patientName: 'Ramesh Kumar', doctorName: 'Dr. A. Sharma' })
+    expect(j.result?.medicines.some((m) => m.name.startsWith('Metformin'))).toBe(true)
+  })
+  it('schema root is an object with typed, described fields', () => {
+    expect(PRESCRIPTION_EXTRACT_SCHEMA.type).toBe('object')
+    expect(Object.keys(PRESCRIPTION_EXTRACT_SCHEMA.properties).length).toBeGreaterThan(0)
+    expect(PRESCRIPTION_EXTRACT_SCHEMA.properties.medicines.items.properties.name.description.length).toBeGreaterThan(0)
   })
   it('refuses to run without a key', () => {
     expect(() => new SarvamDocAi({ apiKey: undefined })).toThrowError(/SARVAM_API_KEY/)
@@ -180,15 +220,30 @@ describe('job polling', () => {
     expect(Object.keys(publicJob(job))).not.toContain('ownerId'); expect(Object.keys(publicJob(job))).not.toContain('sarvamJobId')
   })
   it('a document with no medicines fails with no_medicines but keeps the extracted text for comparison', async () => {
-    beh = { statuses: ['completed'], zip: zipOf('# Lab report\nHemoglobin 13.5 g/dL\nGlucose 98 mg/dL') }
+    beh = { statuses: ['completed'], result: { patient_name: '', doctor_name: '', prescription_date: '', additional_instructions: 'Hemoglobin 13.5 g/dL', medicines: [] }, annotations: {} }
     const { deps } = mk(); const job = await submitExtraction(deps, input)
     const j = await advanceExtraction(deps, job.id, 'u1')
     expect(j).toMatchObject({ status: 'failed', errorCode: 'no_medicines' }); expect(j.result?.rawText).toMatch(/Hemoglobin/)
   })
-  it('a corrupt or empty ZIP is reported, not guessed at', async () => {
-    beh = { statuses: ['completed'], zip: new Uint8Array([1, 2, 3]) }
-    const { deps } = mk(); const job = await submitExtraction(deps, input)
-    expect(await advanceExtraction(deps, job.id, 'u1')).toMatchObject({ status: 'failed', errorCode: 'no_output' })
+})
+
+describe('extract field mapping', () => {
+  it('maps schema fields and confidence without inventing missing values', () => {
+    const r = mapExtractResult({ result: RX_EXTRACT, annotations: RX_ANN })
+    const by = (n: string) => r.medicines.find((m) => m.name.startsWith(n))!
+    expect(r.document).toMatchObject({ patientName: 'Ramesh Kumar', doctorName: 'Dr. A. Sharma', prescriptionDate: '12 Jan 2026' })
+    expect(by('Metformin')).toMatchObject({ strength: '500mg', food: 'after', duration: 'course', courseDays: 30 })
+    expect(by('Amlodipine').food).toBeNull()
+    expect(by('Amlodipine').times).toEqual([])
+    expect(by('Ecosprin').lowConfidence).toBe(true)
+    expect(by('Ecosprin').flags).toEqual(expect.arrayContaining(['strength_missing', 'dose_missing', 'low_confidence']))
+    expect(r.otherInstructions.join(' ')).toMatch(/Avoid sugar/)
+  })
+  it('drops medicines with no name and does not treat dashes as values', () => {
+    const r = mapExtractResult({ result: { medicines: [{ name: '-', strength: '500mg' }, { name: '', dosage: '1 tab' }, { name: 'Thyroxine', strength: 'n/a', dosage: '', frequency: '' }] } })
+    expect(r.medicines).toHaveLength(1)
+    expect(r.medicines[0]).toMatchObject({ name: 'Thyroxine', strength: '' })
+    expect(r.medicines[0].flags).toContain('strength_missing')
   })
 })
 

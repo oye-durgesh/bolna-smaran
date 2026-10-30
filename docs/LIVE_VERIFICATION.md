@@ -27,7 +27,7 @@ Prerequisites: `docs/DEPLOYMENT.md` done (migrations pushed, secrets set, functi
 - [ ] In the app: open a profile → Upload prescription → choose a PDF/PNG/JPG → pick the language → Read. Progress appears; Review shows what was read next to "Compare with original text"; uncertain fields are marked; nothing is active.
 - [ ] Upload the same file again for the same person: "already uploaded". Upload it for the other person: allowed.
 - [ ] SQL: `select status, error_code from extraction_jobs order by created_at desc limit 5;` and `select document_type, person_id from prescription_documents;`.
-- Note: the older `/job/digitise` endpoint is no longer documented; the code uses `/doc-ai/v1/job/parse`. If your account still needs `digitise`, set `SARVAM_DOC_JOB_PATH`.
+- Note: prescription reading uses `POST /doc-ai/v1/job/extract` (Document Intelligence Extract), then `GET .../results`. Parse/digitise are not used unless `SARVAM_DOC_JOB_PATH=parse`.
 
 ## E. Reminders (the acceptance criterion)
 - [ ] Open Talk to Sathi as Mummy (her profile active). Say or type: "Remind me to go for a walk at 6 PM" (use a time a few minutes ahead for the test).
@@ -40,7 +40,7 @@ Prerequisites: `docs/DEPLOYMENT.md` done (migrations pushed, secrets set, functi
 - [ ] Scheduler: Dashboard → Edge Functions → `dispatch-reminders` → logs show one run per minute; calling it without `x-cron-secret` returns 401.
 
 ## F. ElevenLabs (real)
-- [ ] `ELEVENLABS_API_KEY`, `ELEVENLABS_AGENT_ID`, `ELEVENLABS_VOICE_ID` set. Settings → "Use Sathi's server voice" on: a reply plays in the voice you configured.
+- [ ] `ELEVENLABS_API_KEY`, `MUMMY_ELEVENLABS_AGENT_ID`, `PAPA_ELEVENLABS_AGENT_ID`, `ELEVENLABS_VOICE_ID` set. Settings → "Use Sathi's server voice" on: a reply plays in the voice you configured.
 - [ ] Set Mom/Dad voice IDs. On Mummy's page choose Mom; speak; compare the audio with the voice in the ElevenLabs dashboard. Switch to Dad and repeat. Remove `ELEVENLABS_DAD_VOICE_ID` and choose Dad: you must see a clear message and hear the browser voice, never Mom's.
 - [ ] Live agent: enable "Live conversation (beta)". Start a conversation: it connects. Ask for a reminder: the `create_reminder` tool runs (visible in the agent's conversation log).
 - [ ] Mom/Dad on the live agent: confirm the dashboard's Security tab has Voice ID overrides enabled. Without it the session is refused and the app shows the error.

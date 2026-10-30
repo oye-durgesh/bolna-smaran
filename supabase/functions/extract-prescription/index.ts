@@ -29,6 +29,7 @@ Deno.serve(async (req) => {
   const docType = String(form.get('documentType') ?? 'prescription')
   if (!['prescription', 'lab_report', 'blood_sugar_report', 'bp_log', 'discharge_summary', 'appointment_note', 'other'].includes(docType)) return json({ error: 'Unknown document type', code: 'bad_request' }, 400)
   // the document belongs to a family member of THIS account; anything else (another account, archived, unknown) is refused before any upload
+  // RLS (care_select) hides other families. The workspace owner_id must match the signed-in user (prescription_documents FK + rx_owner).
   const { data: person } = await db.from('care_recipients').select('id, owner_id, active').eq('id', personId).maybeSingle()
   if (!person || person.owner_id !== user.id || !person.active) return json({ error: 'You do not have permission to upload for this person.', code: 'permission_denied' }, 403)
   if (!(file instanceof File)) return json({ error: 'Missing file', code: 'invalid_file' }, 400)

@@ -1,11 +1,10 @@
-// Minimal Sarvam Document AI client (Parse). Verified against the official docs (docs.sarvam.ai → Document Intelligence):
-//   POST {base}/doc-ai/v1/job/parse            multipart: file, language (BCP-47), output_format (html|md|json); header api-subscription-key
-//   GET  {base}/doc-ai/v1/job/{id}/status      → { status, usage: { pages_total, pages_processed, pages_succeeded, pages_failed } }
-//   GET  {base}/doc-ai/v1/job/{id}/download-url → { method: 'GET', url }  (the URL is a plain GET, no key) → ZIP
-// States: pending, running, completed, partially_completed, failed, rejected. Errors: 400, 402/403, 404, 409, 413, 422, 429, 503.
-// NOTE: the older "digitise" operation (POST /job/digitise) no longer has documentation pages; the same OCR operation is now "parse".
-// The job path is configurable (SARVAM_DOC_JOB_PATH) in case your account still uses another path.
+// Sarvam Document Intelligence client. Default operation is Extract (not Parse / digitise):
+//   POST {base}/doc-ai/v1/job/extract   multipart: file, schema (JSON string), language (BCP-47), output_format=json; header api-subscription-key
+//   GET  {base}/doc-ai/v1/job/{id}/status
+//   GET  {base}/doc-ai/v1/job/{id}/results  → { result, annotations, usage, status }
+// Optional SARVAM_DOC_JOB_PATH=parse keeps the older ZIP download path for accounts that still use Parse.
 import type { ErrorCode, SarvamState } from './extraction-types.ts'
+import { PRESCRIPTION_EXTRACT_SCHEMA } from './prescription-schema.ts'
 
 export class SarvamError extends Error {
   code: ErrorCode
@@ -22,7 +21,7 @@ export class SarvamError extends Error {
 export interface SarvamDeps {
   apiKey: string | undefined
   baseUrl?: string
-  jobPath?: string // default "parse"
+  jobPath?: string // default "extract"
   fetch?: typeof fetch
 }
 
@@ -30,6 +29,13 @@ export interface SarvamStatus {
   state: SarvamState
   pages: { total: number; processed: number; succeeded: number; failed: number }
   raw: Record<string, unknown>
+}
+
+export interface ExtractResults {
+  status: SarvamState
+  result: unknown
+  annotations: unknown
+  pages: { total: number; processed: number; succeeded: number; failed: number }
 }
 
 const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0)
@@ -44,9 +50,10 @@ export function errorFromResponse(status: number, body: string, headers?: Header
   if (status === 402 || status === 403) return new SarvamError('billing', 'The prescription reader is not available for this account (billing or access). Please contact the administrator.', status)
   if (status === 413) return new SarvamError('too_large', 'This file is too large for the prescription reader.', status)
   if (status === 404) return new SarvamError('not_found', 'The reading job could not be found.', status)
+  if (status === 409) return new SarvamError('unavailable', 'The reading results are not ready yet.', status, retryAfter ?? 3)
   if (status === 422) return new SarvamError('invalid_file', "This file couldn't be opened. It may be damaged or not a supported format.", status)
   if (status === 400) {
-    if (/page|limit/.test(detail)) return new SarvamError('too_many_pages', 'This document has too many pages (the limit is 30). Please upload fewer pages.', status)
+    if (/page|limit/.test(detail)) return new SarvamError('too_many_pages', 'This document has too many pages (the limit is 20). Please upload fewer pages.', status)
     return new SarvamError('bad_request', 'The prescription reader could not accept this request.', status)
   }
   if (status >= 500) return new SarvamError('unavailable', 'The prescription reader is temporarily unavailable. Please try again shortly.', status, retryAfter)
@@ -56,16 +63,18 @@ export function errorFromResponse(status: number, body: string, headers?: Header
 export class SarvamDocAi {
   private key: string
   private base: string
-  private path: string
+  readonly path: string
   private f: typeof fetch
 
   constructor(d: SarvamDeps) {
     if (!d.apiKey) throw new SarvamError('missing_credentials', 'Prescription reading is not configured on the server (SARVAM_API_KEY is missing).', 0)
     this.key = d.apiKey
     this.base = (d.baseUrl ?? 'https://api.sarvam.ai').replace(/\/$/, '')
-    this.path = (d.jobPath ?? 'parse').replace(/^\/|\/$/g, '')
+    this.path = (d.jobPath ?? 'extract').replace(/^\/|\/$/g, '')
     this.f = d.fetch ?? fetch
   }
+
+  get usesExtract(): boolean { return this.path === 'extract' }
 
   private async req(url: string, init: RequestInit = {}): Promise<Response> {
     let res: Response
@@ -79,11 +88,16 @@ export class SarvamDocAi {
   }
 
   /** Create the job. Returns Sarvam's job id. */
-  async submit(file: Blob, fileName: string, language: string, outputFormat: 'md' | 'html' | 'json' = 'md'): Promise<{ jobId: string; state: SarvamState }> {
+  async submit(file: Blob, fileName: string, language: string, outputFormat: 'md' | 'html' | 'json' = 'json'): Promise<{ jobId: string; state: SarvamState }> {
     const form = new FormData()
     form.append('file', file, fileName)
-    form.append('language', language) // NOT "language_code" (ignored by the API)
-    form.append('output_format', outputFormat) // "md", not "markdown" (400)
+    form.append('language', language)
+    if (this.usesExtract) {
+      form.append('schema', JSON.stringify(PRESCRIPTION_EXTRACT_SCHEMA))
+      form.append('output_format', 'json')
+    } else {
+      form.append('output_format', outputFormat)
+    }
     const res = await this.req(`${this.base}/doc-ai/v1/job/${this.path}`, { method: 'POST', body: form })
     const j = (await res.json().catch(() => ({}))) as { job_id?: string; status?: string }
     if (!j.job_id) throw new SarvamError('failed', 'The prescription reader did not return a job id.', res.status)
@@ -101,7 +115,20 @@ export class SarvamDocAi {
     }
   }
 
-  /** Download the output ZIP. The pre-signed URL is a plain GET and must NOT receive the API key. */
+  /** Extract: structured fields + per-leaf confidence. Must not be called until the job is terminal. */
+  async getResults(jobId: string): Promise<ExtractResults> {
+    const res = await this.req(`${this.base}/doc-ai/v1/job/${encodeURIComponent(jobId)}/results?format=json`)
+    const j = (await res.json().catch(() => ({}))) as { status?: string; result?: unknown; annotations?: unknown; usage?: Record<string, unknown> }
+    const u = j.usage ?? {}
+    return {
+      status: normState(j.status),
+      result: j.result ?? {},
+      annotations: j.annotations ?? {},
+      pages: { total: num(u.pages_total), processed: num(u.pages_processed), succeeded: num(u.pages_succeeded), failed: num(u.pages_failed) },
+    }
+  }
+
+  /** Parse ZIP. The pre-signed URL is a plain GET and must NOT receive the API key. */
   async downloadZip(jobId: string): Promise<Uint8Array> {
     const res = await this.req(`${this.base}/doc-ai/v1/job/${encodeURIComponent(jobId)}/download-url`)
     const j = (await res.json().catch(() => ({}))) as { url?: string }

@@ -2,7 +2,6 @@
 // Proves our wiring, not Sarvam's OCR. Run: npm run e2e:sarvam   (needs Playwright: NODE_PATH=$(npm root -g))
 import { createServer } from 'node:http'
 import { spawn } from 'node:child_process'
-import { zipSync, strToU8 } from 'fflate'
 import { createRequire } from 'node:module'
 import { writeFileSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -16,10 +15,22 @@ const fake = createServer((req, res) => {
   req.resume()
   req.on('end', () => {
     const u = req.url
-    if (u === '/doc-ai/v1/job/parse') { polls = 0; if (mode === 'ratelimit') { res.writeHead(429, { 'Retry-After': '1' }); return res.end('{}') } res.writeHead(200, { 'content-type': 'application/json' }); return res.end('{"job_id":"j1","status":"pending"}') }
+    if (u === '/doc-ai/v1/job/extract') { polls = 0; if (mode === 'ratelimit') { res.writeHead(429, { 'Retry-After': '1' }); return res.end('{}') } res.writeHead(201, { 'content-type': 'application/json' }); return res.end('{"job_id":"j1","status":"pending","run_id":"r1"}') }
     if (u === '/doc-ai/v1/job/j1/status') { polls++; res.writeHead(200, { 'content-type': 'application/json' }); return res.end(JSON.stringify({ status: polls < 2 ? 'running' : mode === 'fail' ? 'failed' : 'completed', usage: { pages_total: 1, pages_processed: 1, pages_succeeded: 1, pages_failed: 0 } })) }
-    if (u === '/doc-ai/v1/job/j1/download-url') { res.writeHead(200, { 'content-type': 'application/json' }); return res.end(JSON.stringify({ method: 'GET', url: `http://127.0.0.1:8791/out.zip` })) }
-    if (u === '/out.zip') { res.writeHead(200); return res.end(Buffer.from(zipSync({ 'rx/rx.md': strToU8(MD) }))) }
+    if ((u ?? '').startsWith('/doc-ai/v1/job/j1/results')) {
+      res.writeHead(200, { 'content-type': 'application/json' })
+      return res.end(JSON.stringify({
+        job_id: 'j1', type: 'extract', status: 'completed', version: 1, usage: { pages_total: 1, pages_processed: 1, pages_succeeded: 1, pages_failed: 0 },
+        result: {
+          patient_name: '', doctor_name: '', prescription_date: '', additional_instructions: 'Avoid sugar.',
+          medicines: [
+            { name: 'Metformin', strength: '500mg', dosage: '1 tab', frequency: 'BD', intake_timing: '', food_instructions: 'after food', duration: '30 days' },
+            { name: 'Amlodipine', strength: '5mg', dosage: '1 tab', frequency: 'OD', intake_timing: '', food_instructions: '', duration: '' },
+          ],
+        },
+        annotations: {},
+      }))
+    }
     res.writeHead(404); res.end('{}')
   })
 }).listen(8791, '127.0.0.1')

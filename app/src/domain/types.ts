@@ -253,6 +253,7 @@ export interface ExtractionRecord {
   rawFormat?: 'md' | 'html' | 'json'
   otherInstructions?: string[]
   warnings?: string[]
+  document?: { patientName: string; doctorName: string; prescriptionDate: string }
 }
 
 export interface Preferences {

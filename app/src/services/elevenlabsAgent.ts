@@ -13,7 +13,7 @@ import { describeWhen } from '../domain/nlp'
 import { validateParsed } from '../voice/brain'
 import { fmtDayTime } from '../domain/time'
 import { now, store } from '../store/store'
-import { agentOverrides, agentSessionConfig } from './agentConfig'
+import { agentSessionConfig } from './agentConfig'
 
 export interface AgentHandlers {
   onConnect(): void
@@ -27,25 +27,25 @@ export interface AgentController { end(): Promise<void>; setMuted(muted: boolean
 const s0 = () => store.get()
 
 export async function startAgent(h: AgentHandlers, ctx: { reminderId?: string }): Promise<AgentController> {
-  // The server resolves the persona to its own configured voice; a failure here (missing/invalid voice, no consent) is shown, never substituted.
+  // The server picks the agent from the profile's relationship in the database (Mummy → Mummy's agent, Papa → Papa's). A failure here
+  // (missing agent or key, no access, ElevenLabs error) is shown as is, and never replaced by the other person's agent.
   const cfg = agentSessionConfig(s0(), { reminderTitle: ctx.reminderId ? s0().reminders.find((r) => r.id === ctx.reminderId)?.title : undefined })
-  const persona = cfg.persona
-  let sess: { signedUrl: string; persona: string; voiceId: string }
+  const expected = cfg.dynamicVariables.relationship === 'mother' ? 'mummy' : cfg.dynamicVariables.relationship === 'father' ? 'papa' : null
+  let sess: { signedUrl: string; agent: string; personId: string }
   try {
-    if (backendConfigured() && (await hasSession())) sess = await callFunction<{ signedUrl: string; persona: string; voiceId: string }>('elevenlabs-session', { persona })
+    if (backendConfigured() && (await hasSession())) sess = await callFunction<{ signedUrl: string; agent: string; personId: string }>('elevenlabs-session', { personId: cfg.personId })
     else {
-      if (!(await localHealth())?.elevenlabs.agent) throw new (await import('./backend')).BackendError('The live voice agent is not set up (ELEVENLABS_AGENT_ID).', 503, 'missing_credentials')
-      const r = await fetch('/api/elevenlabs-session', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ persona, consent: store.get().prefs.voiceCloningConsent }) })
+      if (!(await localHealth())?.elevenlabs.agent) throw new (await import('./backend')).BackendError('The live voice agent is not set up (MUMMY_ELEVENLABS_AGENT_ID / PAPA_ELEVENLABS_AGENT_ID).', 503, 'missing_credentials')
+      const r = await fetch('/api/elevenlabs-session', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ personId: cfg.personId, relationship: cfg.dynamicVariables.relationship, consent: store.get().prefs.voiceCloningConsent }) })
       const b = await r.json().catch(() => ({}))
       if (!r.ok) throw new (await import('./backend')).BackendError(b.error ?? `Request failed (${r.status})`, r.status, b.code)
       sess = b
     }
   } catch (e) {
     const { BackendError } = await import('./backend')
-    const { voiceErrorMessage } = await import('./ttsRemote')
-    throw new Error(e instanceof BackendError ? voiceErrorMessage(e.code, e.message) : 'Could not reach the server.')
+    throw new Error(e instanceof BackendError ? e.message : 'Could not reach the server.')
   }
-  if (sess.persona !== persona) throw new Error('The server answered with a different voice than the one selected, so the conversation was not started.')
+  if (!expected || sess.agent !== expected || sess.personId !== cfg.personId) throw new Error("The server answered for a different profile than the one selected, so the conversation was not started.")
   const { signedUrl } = sess
   const { Conversation } = await import('@elevenlabs/client')
   const s = store.get()
@@ -92,9 +92,7 @@ export async function startAgent(h: AgentHandlers, ctx: { reminderId?: string })
 
   const conv = await Conversation.startSession({
     signedUrl,
-    // Per-conversation voice override. ElevenLabs requires "Voice ID" to be enabled under the agent's Security settings.
-    // The default persona leaves the agent's own dashboard voice untouched.
-    ...(agentOverrides(persona, sess.voiceId) ? { overrides: agentOverrides(persona, sess.voiceId) } : {}),
+    // No voice override: each agent speaks with the voice configured for it in the ElevenLabs dashboard.
     clientTools,
     dynamicVariables: cfg.dynamicVariables,
     onConnect: () => h.onConnect(),

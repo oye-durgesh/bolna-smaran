@@ -40,7 +40,7 @@ createServer(async (req, res) => {
     if (req.url === '/api/health') return send(res, 200, {
       ok: true, configured: !!process.env.SARVAM_API_KEY, mode: 'local-dev',
       // booleans only: which ElevenLabs settings exist. Never the values.
-      elevenlabs: { key: !!process.env.ELEVENLABS_API_KEY, agent: !!process.env.ELEVENLABS_AGENT_ID, voices: Object.fromEntries(PERSONAS.map((p) => [p, !!(process.env[VOICE_ENV[p]] ?? '').trim()])) },
+      elevenlabs: { key: !!process.env.ELEVENLABS_API_KEY, agent: !!process.env.MUMMY_ELEVENLABS_AGENT_ID || !!process.env.PAPA_ELEVENLABS_AGENT_ID, voices: Object.fromEntries(PERSONAS.map((p) => [p, !!(process.env[VOICE_ENV[p]] ?? '').trim()])) },
     })
     if (req.method !== 'POST') return send(res, 404, { error: 'Not found' })
 
@@ -56,8 +56,9 @@ createServer(async (req, res) => {
     }
     if (req.url === '/api/elevenlabs-session') {
       const b = await readJson(req)
-      const r = await agentSession(env, { persona: b.persona, consent: b.consent === true })
-      return r.ok ? send(res, 200, { signedUrl: r.signedUrl, persona: r.persona, voiceId: r.voiceId }) : send(res, r.status, r.body)
+      // LOCAL DEV ONLY: there is no database or sign-in here, so the relationship comes from the browser. The deployed Edge Function never does this.
+      const r = await agentSession(env, { relationship: b.relationship, consent: b.consent === true })
+      return r.ok ? send(res, 200, { signedUrl: r.signedUrl, agent: r.agent, personId: String(b.personId ?? '') }) : send(res, r.status, r.body)
     }
 
     let deps

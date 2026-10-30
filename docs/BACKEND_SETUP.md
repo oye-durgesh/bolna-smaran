@@ -13,7 +13,7 @@ holds the public anon key and the public VAPID key.
 | Scheduled delivery (app closed) | pg_cron → `dispatch-reminders` → Web Push | VAPID keys, `CRON_SECRET`, pg_cron/pg_net |
 | Prescription reading | `extract-prescription` → Sarvam Document AI | `SARVAM_API_KEY` |
 | Sathi's server voice | `tts` → ElevenLabs | `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID` |
-| Live conversation (beta) | `elevenlabs-session` (signed URL) → `@elevenlabs/client` | an ElevenLabs agent + `ELEVENLABS_AGENT_ID` |
+| Live conversation (beta) | `elevenlabs-session` (signed URL) → `@elevenlabs/client` | two ElevenLabs agents + `MUMMY_ELEVENLABS_AGENT_ID` / `PAPA_ELEVENLABS_AGENT_ID` + one `ELEVENLABS_API_KEY` |
 
 > Start with `docs/DEPLOYMENT.md` (the current end-to-end guide, including Vercel). This file is the original background reference; where they differ, `DEPLOYMENT.md` wins.
 

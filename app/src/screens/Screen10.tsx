@@ -32,6 +32,13 @@ export default function Screen10() {
         </div>
         <div className="sf" style={{ fontSize: 24, marginTop: 20, lineHeight: 1.25 }}>Medicines found</div>
         <div style={{ fontSize: 13, color: '#8A7F6A', marginTop: 6 }}>Review each medicine before setting reminders.{forName ? ` These are for ${forName}.` : ''}</div>
+        {extraction?.document && (extraction.document.patientName || extraction.document.doctorName || extraction.document.prescriptionDate) && (
+          <div style={{ fontSize: 13, color: '#7A6B5D', marginTop: 8, lineHeight: 1.5 }}>
+            {extraction.document.patientName ? <>Patient: {extraction.document.patientName}<br /></> : null}
+            {extraction.document.doctorName ? <>Doctor: {extraction.document.doctorName}<br /></> : null}
+            {extraction.document.prescriptionDate ? <>Date: {extraction.document.prescriptionDate}</> : null}
+          </div>
+        )}
         {extraction?.isMock && pending.some((m) => m.extractionProvider === 'mock') && (
           <div style={{ fontSize: 12, color: '#C08560', marginTop: 8, lineHeight: 1.4 }}>Sample data from demo mode — these medicines were not read from your file.</div>
         )}

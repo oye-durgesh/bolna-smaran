@@ -35,6 +35,12 @@ export interface ExtractedMedicine {
   evidence: Partial<Record<'dose' | 'frequency' | 'timing' | 'food' | 'duration', string>>
 }
 
+export interface ExtractionDocument {
+  patientName: string
+  doctorName: string
+  prescriptionDate: string
+}
+
 export interface ExtractionOutput {
   provider: 'sarvam'
   isMock: false
@@ -45,6 +51,7 @@ export interface ExtractionOutput {
   otherInstructions: string[]
   warnings: string[]
   pages?: { total: number; succeeded: number; failed: number }
+  document?: ExtractionDocument
 }
 
 export interface ExtractionJob {
@@ -85,11 +92,11 @@ export const DOC_LANGUAGES: Array<{ code: string; name: string }> = [
 export const isDocLanguage = (c: string) => DOC_LANGUAGES.some((l) => l.code === c)
 export const appLangToDoc = (l: string): string => ({ hi: 'hi-IN', en: 'en-IN', mr: 'mr-IN', kn: 'kn-IN' } as Record<string, string>)[l] ?? 'en-IN'
 
-// Limits from the Sarvam docs (Parse): PDF, PNG, JPG/JPEG; 30 pages; 200 MB. Smaran caps uploads lower (10 MB) for phones.
+// Limits from the Sarvam docs (Extract): PDF, PNG, JPG/JPEG; 20 pages; 200 MB. Smaran caps uploads lower (10 MB) for phones.
 export const ACCEPTED_EXT = ['pdf', 'png', 'jpg', 'jpeg']
 export const ACCEPTED_MIME = ['application/pdf', 'image/png', 'image/jpeg']
 export const SMARAN_MAX_BYTES = 10 * 1024 * 1024
-export const SARVAM_MAX_PAGES = 30
+export const SARVAM_MAX_PAGES = 20
 
 export function validateUpload(f: { name: string; type: string; size: number }): { code: ErrorCode; message: string } | null {
   const ext = f.name.toLowerCase().split('.').pop() ?? ''

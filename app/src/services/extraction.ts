@@ -25,6 +25,7 @@ export interface ExtractionResult {
   warnings: string[]
   jobId?: string
   language?: string
+  document?: { patientName: string; doctorName: string; prescriptionDate: string }
 }
 
 export class ExtractionError extends Error {
@@ -62,7 +63,7 @@ export function messageFor(code: string, fallback?: string): string {
     case 'missing_credentials': return 'Prescription reading is not set up on the server yet (the Sarvam API key is missing). You can add your medicines manually.'
     case 'rate_limit': return 'The reading service is busy right now. Please wait a minute and try again.'
     case 'timeout': case 'timed_out': return 'Reading is taking longer than expected. Please try again, or add your medicines manually.'
-    case 'too_many_pages': return 'This document has too many pages. Please upload up to 30 pages.'
+    case 'too_many_pages': return 'This document has too many pages. Please upload up to 20 pages.'
     case 'unsupported_type': case 'invalid_file': case 'too_large': return fallback ?? 'This file cannot be used. Please choose a PDF, PNG or JPG up to 10 MB.'
     case 'rejected': return 'The reading service could not accept this document. Try a clearer photo or a different file.'
     case 'no_medicines': return 'We read the document but could not find any medicines in it. You can compare the text we read, or add medicines manually.'
@@ -160,7 +161,7 @@ export async function runJob(t: Transport, file: Blob, o: ExtractOptions, cfg: P
       if (job.status === 'completed' || job.status === 'partially_completed') {
         if (!job.result) throw new ExtractionError(messageFor('no_output'), 'no_output')
         const r = job.result as ExtractionOutput
-        return { provider: 'sarvam', isMock: false, rawText: r.rawText, rawFormat: r.rawFormat, outcome: r.outcome, medicines: r.medicines, otherInstructions: r.otherInstructions ?? [], warnings: r.warnings ?? [], jobId: job.id, language: job.language }
+        return { provider: 'sarvam', isMock: false, rawText: r.rawText, rawFormat: r.rawFormat, outcome: r.outcome, medicines: r.medicines, otherInstructions: r.otherInstructions ?? [], warnings: r.warnings ?? [], jobId: job.id, language: job.language, document: r.document }
       }
       if (job.status === 'failed' || job.status === 'rejected' || job.status === 'cancelled' || job.status === 'timed_out') {
         const code = job.errorCode ?? (job.status === 'timed_out' ? 'timeout' : job.status)
@@ -241,6 +242,7 @@ export function toDraftMedicines(r: ExtractionResult): Medicine[] {
       id: newId('med'), name: e.name, strength: e.strength, dose: e.dose, frequency, timeOfDay: e.timeOfDay.filter((t) => TOD.includes(t)), times: e.times,
       food, duration: e.duration === 'course' && e.courseDays ? 'course' as const : 'ongoing' as const, courseDays: e.duration === 'course' ? e.courseDays : undefined,
       notes: e.notes, status: 'draft' as const, source: 'prescription' as const, sourceText: e.sourceText, flags, timeZone: tz, createdAt: n, extractionProvider: r.provider,
+      prescriber: r.document?.doctorName || undefined,
     }
   })
 }

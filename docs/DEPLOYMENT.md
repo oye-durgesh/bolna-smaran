@@ -15,7 +15,9 @@ Nothing in this repository has been deployed. These are the steps to do it.
 | Vercel | `VITE_LOCAL_API` | **leave unset** | only for `npm run dev:api` on your own computer |
 | Supabase secrets | `SARVAM_API_KEY` | prescription reading | |
 | Supabase secrets | `ELEVENLABS_API_KEY` | spoken replies and live agent | |
-| Supabase secrets | `ELEVENLABS_AGENT_ID` | live conversation | the one shared agent; see `ELEVENLABS_AGENT.md` |
+| Supabase secrets | `ELEVENLABS_API_KEY` | all ElevenLabs calls | ONE shared key (both agents are in the same workspace). Secret |
+| Supabase secrets | `MUMMY_ELEVENLABS_AGENT_ID` | Mummy's live conversation | Mummy's own agent; see `ELEVENLABS_AGENT.md` |
+| Supabase secrets | `PAPA_ELEVENLABS_AGENT_ID` | Papa's live conversation | Papa's own agent. Must differ from Mummy's |
 | Supabase secrets | `ELEVENLABS_VOICE_ID` | default voice | a normal (not cloned) voice |
 | Supabase secrets | `ELEVENLABS_MOM_VOICE_ID`, `ELEVENLABS_DAD_VOICE_ID` | optional | voices you own or have written permission to use; each person's choice maps to exactly one of these. A missing ID is an error, never a substitute |
 | Supabase secrets | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | push | subject like `mailto:you@example.com` |

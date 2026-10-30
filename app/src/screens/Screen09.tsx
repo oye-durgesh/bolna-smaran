@@ -43,7 +43,7 @@ export default function Screen09() {
         })
         if (cancelled) return
         const meds = toDraftMedicines(res)
-        recordExtraction({ batchId, provider: res.provider, at: now().toISOString(), isMock: res.isMock, rawText: res.rawText, rawFormat: res.rawFormat, outcome: res.outcome, jobId: res.jobId, language: res.language ?? rx.language, otherInstructions: res.otherInstructions, warnings: res.warnings }, meds, prevBatch)
+        recordExtraction({ batchId, provider: res.provider, at: now().toISOString(), isMock: res.isMock, rawText: res.rawText, rawFormat: res.rawFormat, outcome: res.outcome, jobId: res.jobId, language: res.language ?? rx.language, otherInstructions: res.otherInstructions, warnings: res.warnings, document: res.document }, meds, prevBatch)
         go(res.outcome === 'partial' ? '45' : '10', undefined, { replace: true })
       } catch (e) {
         if (cancelled) return
