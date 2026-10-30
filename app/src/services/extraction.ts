@@ -31,7 +31,7 @@ export interface ExtractionResult {
 export class ExtractionError extends Error {
   rawText?: string
   jobId?: string
-  constructor(message: string, readonly code: ErrorCode | 'unreadable' | 'network' | 'server' | 'duplicate_upload' | 'permission_denied', readonly retryable = false) { super(message) }
+  constructor(message: string, readonly code: ErrorCode | 'unreadable' | 'network' | 'server' | 'duplicate_upload' | 'permission_denied' | 'not_signed_in', readonly retryable = false) { super(message) }
 }
 
 export interface ExtractOptions {
@@ -69,6 +69,7 @@ export function messageFor(code: string, fallback?: string): string {
     case 'no_medicines': return 'We read the document but could not find any medicines in it. You can compare the text we read, or add medicines manually.'
     case 'no_output': return 'The reading service returned no text for this document.'
     case 'auth': case 'billing': return 'Prescription reading is unavailable because of a server configuration problem.'
+    case 'not_signed_in': return 'Sign in to read your prescription. Sample medicines are not used.'
     case 'unavailable': return 'The reading service is temporarily unavailable. Please try again shortly.'
     case 'network': return 'Could not reach the server. Check your connection and try again.'
     case 'cancelled': return 'Reading was cancelled.'
@@ -183,7 +184,10 @@ export async function runJob(t: Transport, file: Blob, o: ExtractOptions, cfg: P
   } finally { o.signal?.removeEventListener('abort', onAbort) }
 }
 
-/** Local demo extractor. It does NOT read the file: it returns fixed, clearly-labelled sample medicines. */
+/**
+ * Sample medicines for unit tests and DevPanel fixtures only. Never call this from the live upload screens.
+ * It does not read the file.
+ */
 export const mockExtractor: PrescriptionExtractor = {
   id: 'mock',
   async extract(_f, o) {
@@ -207,6 +211,16 @@ export const mockExtractor: PrescriptionExtractor = {
 
 const transportExtractor = (t: Transport): PrescriptionExtractor => ({ id: 'sarvam', extract: (file, o) => runJob(t, file, o) })
 
+export type ExtractorSource = 'supabase' | 'local' | 'mock' | 'none'
+
+/** Demo sample is opt-in. A real upload never selects the mock extractor, even if demo family is loaded. */
+export function chooseExtractorSource(hasBackendSession: boolean, local: 'down' | 'configured' | 'unconfigured', demoSample = false): ExtractorSource {
+  if (demoSample) return 'mock'
+  if (hasBackendSession) return 'supabase'
+  if (local !== 'down') return 'local'
+  return 'none'
+}
+
 /** 'down' = no dev API (demo mode); otherwise whether it holds a Sarvam key. */
 export async function localApiState(): Promise<'down' | 'configured' | 'unconfigured'> {
   if (import.meta.env.VITE_LOCAL_API !== 'true') return 'down'
@@ -218,19 +232,24 @@ export async function localApiState(): Promise<'down' | 'configured' | 'unconfig
   } catch { return 'down' }
 }
 
-/** Real transport when one is available (signed-in backend, or the local dev API); otherwise the labelled demo extractor. */
-export async function getExtractor(): Promise<PrescriptionExtractor> {
+/** Signed-in Supabase or local Sarvam API for real files. Mock only when the user chose a labelled sample prescription. */
+export async function getExtractor(opts?: { demoSample?: boolean }): Promise<PrescriptionExtractor> {
   const { backendConfigured, hasSession } = await import('./backend')
-  if (backendConfigured() && (await hasSession())) return transportExtractor(supabaseTransport)
-  if ((await localApiState()) !== 'down') return transportExtractor(localTransport)
-  return mockExtractor
+  const source = chooseExtractorSource(backendConfigured() && (await hasSession()), await localApiState(), !!opts?.demoSample)
+  if (source === 'mock') return mockExtractor
+  if (source === 'supabase') return transportExtractor(supabaseTransport)
+  if (source === 'local') return transportExtractor(localTransport)
+  const code = backendConfigured() ? 'not_signed_in' : 'unavailable'
+  throw new ExtractionError(messageFor(code), code)
 }
 
 const TOD: TimeOfDay[] = ['morning', 'afternoon', 'evening', 'night']
 
 /** Turn extraction output into DRAFT medicines. Nothing extracted is trusted or activated automatically. */
-export function toDraftMedicines(r: ExtractionResult): Medicine[] {
+export function toDraftMedicines(r: ExtractionResult, personId?: string, opts?: { allowDemo?: boolean }): Medicine[] {
+  if ((r.isMock || r.provider === 'mock') && !opts?.allowDemo) return []
   const tz = store.get().profile.timeZone
+  const who = personId ?? store.get().activePersonId
   const n = now().toISOString()
   return r.medicines.map((e) => {
     const frequency: Frequency = e.frequency ?? 'once'
@@ -242,7 +261,7 @@ export function toDraftMedicines(r: ExtractionResult): Medicine[] {
       id: newId('med'), name: e.name, strength: e.strength, dose: e.dose, frequency, timeOfDay: e.timeOfDay.filter((t) => TOD.includes(t)), times: e.times,
       food, duration: e.duration === 'course' && e.courseDays ? 'course' as const : 'ongoing' as const, courseDays: e.duration === 'course' ? e.courseDays : undefined,
       notes: e.notes, status: 'draft' as const, source: 'prescription' as const, sourceText: e.sourceText, flags, timeZone: tz, createdAt: n, extractionProvider: r.provider,
-      prescriber: r.document?.doctorName || undefined,
+      personId: who, prescriber: r.document?.doctorName || undefined,
     }
   })
 }

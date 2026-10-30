@@ -3,19 +3,14 @@
  * A missing/failed server voice never borrows another persona. Playback errors are reported; the caller still continues.
  */
 import type { Lang, Person } from '../domain/types'
+import { assignedVoicePersona } from '../domain/people'
 import { speak as browserSpeak } from './speech'
 import { remoteVoiceAvailable, speakRemote, stopRemote } from '../services/ttsRemote'
 
 export type Persona = Person['sathiVoice']
 
 /** Assigned Sathi voice, with mother→mom and father→dad when the chip is still Default. */
-export function reminderVoicePersona(p: Person | undefined): Persona {
-  if (!p) return 'default'
-  if (p.sathiVoice !== 'default') return p.sathiVoice
-  if (p.relationship === 'mother') return 'mom'
-  if (p.relationship === 'father') return 'dad'
-  return 'default'
-}
+export const reminderVoicePersona = assignedVoicePersona
 
 export async function playSathiLine(input: {
   say: string

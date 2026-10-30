@@ -9,7 +9,6 @@ import { newId } from '../domain/ids'
 
 export default function Screen09() {
   const { go } = useApp()
-  const [isMock, setIsMock] = useState<boolean | null>(null)
   const [progress, setProgress] = useState<string>()
   const [canCancel, setCanCancel] = useState(false)
   const started = useRef(false)
@@ -32,18 +31,23 @@ export default function Screen09() {
         if (!cancelled) go('28', undefined, { replace: true })
       }
       if (!rx) return fail('No prescription file was selected.')
+      const personId = store.get().activePersonId
+      if (!personId) return fail('Choose who this prescription is for, then try again.', { code: 'permission_denied' })
+      const demoSample = !!rx.demoSample
       const blob = await fileStore.get(rx.fileKey).catch(() => undefined)
       if (!blob) return fail('The selected file could not be found on this device. Please choose it again.')
-      const ex = await getExtractor()
-      if (!cancelled) setIsMock(ex.id === 'mock')
       try {
+        const ex = await getExtractor({ demoSample })
+        if (!demoSample && ex.id === 'mock') return fail('A real upload cannot use sample medicines. Sign in so your file can be sent to the reading service.', { code: 'not_signed_in' })
         const res = await ex.extract(blob, {
-          name: rx.fileName, mime: rx.mime, language: rx.language ?? 'en-IN', personId: store.get().activePersonId, documentType: 'prescription', signal: ac.signal,
+          name: rx.fileName, mime: rx.mime, language: rx.language ?? 'en-IN', personId, documentType: 'prescription', signal: ac.signal,
           onProgress: (p) => { if (!cancelled) setProgress(p.pages && p.pages.total ? `Page ${Math.min(p.pages.processed + 1, p.pages.total)} of ${p.pages.total}` : undefined) },
         })
         if (cancelled) return
-        const meds = toDraftMedicines(res)
-        recordExtraction({ batchId, provider: res.provider, at: now().toISOString(), isMock: res.isMock, rawText: res.rawText, rawFormat: res.rawFormat, outcome: res.outcome, jobId: res.jobId, language: res.language ?? rx.language, otherInstructions: res.otherInstructions, warnings: res.warnings, document: res.document }, meds, prevBatch)
+        if (!demoSample && (res.isMock || res.provider === 'mock')) return fail('A real upload cannot use sample medicines. Your file was not sent to the reading service.', { code: 'not_signed_in' })
+        if (!res.medicines.length) return fail('We read the document but could not find any medicines in it. You can compare the text we read, or add medicines manually.', { code: 'no_medicines', rawText: res.rawText, jobId: res.jobId })
+        const meds = toDraftMedicines(res, personId, { allowDemo: demoSample })
+        recordExtraction({ batchId, provider: demoSample ? 'mock' : res.provider, at: now().toISOString(), isMock: demoSample, rawText: res.rawText, rawFormat: res.rawFormat, outcome: res.outcome, jobId: res.jobId, language: res.language ?? rx.language, otherInstructions: res.otherInstructions, warnings: res.warnings, document: res.document }, meds, prevBatch)
         go(res.outcome === 'partial' ? '45' : '10', undefined, { replace: true })
       } catch (e) {
         if (cancelled) return
@@ -63,9 +67,9 @@ export default function Screen09() {
       <div role="status" aria-label="Reading prescription" style={{ width: 40, height: 40, marginTop: 32, border: '3px solid #E8DFD1', borderTopColor: '#7B8B5A', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
       <div className="sf" style={{ fontSize: 22, marginTop: 20, textAlign: 'center' }}>Reading your prescription</div>
       <div style={{ fontSize: 14, color: '#7A6B5D', marginTop: 12, textAlign: 'center', maxWidth: 280, lineHeight: 1.5 }}>We'll ask you to check the details before setting any reminders.</div>
+      {store.get().setup.prescription?.demoSample && <div style={{ fontSize: 12, color: '#C08560', marginTop: 12, textAlign: 'center', maxWidth: 280, lineHeight: 1.4 }}>DEMO DATA: this is a sample prescription. No text is read from a real file.</div>}
       {progress && <div style={{ fontSize: 13, color: '#7A6B5D', marginTop: 8 }}>{progress}</div>}
       {canCancel && <Tap style={{ fontSize: 14, color: '#7A6B5D', marginTop: 20, textDecoration: 'underline' }} onClick={() => { abort.current?.abort(); back() }}>Cancel</Tap>}
-      {isMock && <div style={{ fontSize: 12, color: '#C08560', marginTop: 12, textAlign: 'center', maxWidth: 280, lineHeight: 1.4 }}>Demo mode: no text is read from your file. Sample medicines will be shown for you to review.</div>}
     </div>
   )
 }

@@ -111,7 +111,19 @@ export function integrityProblems(s: AppState): string[] {
   return out
 }
 
+/**
+ * Server TTS persona for this person. An explicit chip (mom/dad) wins; otherwise mother→mom and father→dad.
+ * Never maps one parent onto the other parent's voice.
+ */
+export function assignedVoicePersona(p: Person | undefined): Person['sathiVoice'] {
+  if (!p) return 'default'
+  if (p.sathiVoice !== 'default') return p.sathiVoice
+  if (p.relationship === 'mother') return 'mom'
+  if (p.relationship === 'father') return 'dad'
+  return 'default'
+}
+
 /** Which configured server voice Sathi uses for the ACTIVE person (stored on that person, never global). */
-export const voicePersona = (s: Pick<AppState, 'people' | 'activePersonId'>): Person['sathiVoice'] => activePerson(s)?.sathiVoice ?? 'default'
+export const voicePersona = (s: Pick<AppState, 'people' | 'activePersonId'>): Person['sathiVoice'] => assignedVoicePersona(activePerson(s))
 
 export const newPersonId = () => newId('per')

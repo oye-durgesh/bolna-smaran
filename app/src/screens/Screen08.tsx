@@ -43,7 +43,20 @@ export default function Screen08() {
       setError('Could not keep this file on your device (storage is unavailable or full). Try a smaller file.')
       return
     }
-    setPrescription({ fileName: f.name, mime: f.type || (f.name.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'image/jpeg'), size: f.size, fileKey: key, addedAt: now().toISOString(), language: appLangToDoc(store.get().profile.language) })
+    setPrescription({ fileName: f.name, mime: f.type || (f.name.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'image/jpeg'), size: f.size, fileKey: key, addedAt: now().toISOString(), language: appLangToDoc(store.get().profile.language), demoSample: false })
+  }
+  const loadDemoSample = async () => {
+    setError(undefined)
+    const blob = new Blob(['DEMO SAMPLE PRESCRIPTION — not a real document'], { type: 'application/pdf' })
+    const key = 'rx-demo-sample'
+    try {
+      if (rx) await fileStore.del(rx.fileKey).catch(() => undefined)
+      await fileStore.put(key, blob)
+    } catch {
+      setError('Could not keep the sample file on this device.')
+      return
+    }
+    setPrescription({ fileName: 'sample-prescription (DEMO DATA).pdf', mime: 'application/pdf', size: blob.size, fileKey: key, addedAt: now().toISOString(), language: appLangToDoc(store.get().profile.language), demoSample: true })
   }
   const remove = async () => {
     if (rx) await fileStore.del(rx.fileKey).catch(() => undefined)
@@ -108,10 +121,16 @@ export default function Screen08() {
                 {DOC_LANGUAGES.map((l) => <option key={l.code} value={l.code}>{l.name}</option>)}
               </select>
             </label>
-            <Btn onClick={() => go('09')}>Read prescription</Btn>
+            <Btn onClick={() => go('09')}>{rx.demoSample ? 'Read sample (DEMO DATA)' : 'Read prescription'}</Btn>
             <Tap style={{ fontSize: 14, color: '#B75B53', fontWeight: 500 }} onClick={() => { void remove(); toast('Removed the selected file.') }}>Remove file</Tap>
           </div>
         )}
+        {!rx && (
+          <Tap onClick={() => { void loadDemoSample() }} style={{ marginTop: 16, fontSize: 14, color: '#6F526C', fontWeight: 500, textAlign: 'center' }}>
+            Try a sample prescription (DEMO DATA)
+          </Tap>
+        )}
+        {rx?.demoSample && <div style={{ fontSize: 12, color: '#C08560', marginTop: 10, textAlign: 'center' }}>DEMO DATA — sample medicines will be shown. Upload a real file to use Sarvam extraction.</div>}
         <div style={{ fontSize: 12, color: '#8A7F6A', marginTop: 12, textAlign: 'center' }}>Handwritten prescriptions may need manual confirmation.</div>
         <div className="sep" />
         <Tap onClick={() => go('31')} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontSize: 15, color: '#7B8B5A', fontWeight: 500 }}>

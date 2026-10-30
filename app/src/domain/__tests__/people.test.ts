@@ -108,6 +108,11 @@ describe('per-person settings and voice', () => {
     A.setActivePerson(papa); expect(effectiveSettings(store.get())).toMatchObject({ language: 'en', address: 'Papa' }); expect(voicePersona(store.get())).toBe('dad')
     A.setActivePerson(me); expect(voicePersona(store.get())).toBe('default')
   })
+  it('Mummy maps to mom and Papa to dad even when the voice chip is still Default', () => {
+    A.setActivePerson(mum); expect(voicePersona(store.get())).toBe('mom')
+    A.setActivePerson(papa); expect(voicePersona(store.get())).toBe('dad')
+    A.setPersonVoice(mum, 'dad'); A.setActivePerson(mum); expect(voicePersona(store.get())).toBe('dad')
+  })
   it('voice-cloning consent lives in preferences, separate from the form of address', () => {
     A.updateProfile({ callName: 'Mummy' }); A.updatePrefs({ voiceCloningConsent: true })
     expect(store.get().prefs.voiceCloningConsent).toBe(true)

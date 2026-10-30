@@ -31,6 +31,8 @@ export function seedDemoFamily(): SeedResult {
   const iso = (offsetDays: number, h = 8, m = 0) => { const d = new Date(n.getTime() + offsetDays * DAY); d.setHours(h, m, 0, 0); return d.toISOString() }
   const mum = (A.addPerson({ relationship: 'mother', displayName: 'Sunita (demo)', greetingName: 'Mummy', language: 'hi' }) as { value: { person: { id: string } } }).value.person.id
   const papa = (A.addPerson({ relationship: 'father', displayName: 'Ramesh (demo)', greetingName: 'Papa', language: 'en' }) as { value: { person: { id: string } } }).value.person.id
+  A.setPersonVoice(mum, 'mom')
+  A.setPersonVoice(papa, 'dad')
 
   const addMed = (who: string, over: Partial<Medicine>): Medicine => {
     A.setActivePerson(who)

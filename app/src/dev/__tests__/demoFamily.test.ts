@@ -16,6 +16,8 @@ describe('synthetic demo family', () => {
     const s = store.get()
     expect(s.demo).toMatchObject({ demoFamily: true, sampleData: true })        // sync skips a store flagged sampleData
     expect(s.people.filter((p) => p.relationship !== 'self').map((p) => p.displayName).sort()).toEqual(['Ramesh (demo)', 'Sunita (demo)'])
+    expect(s.people.find((p) => p.relationship === 'mother')?.sathiVoice).toBe('mom')
+    expect(s.people.find((p) => p.relationship === 'father')?.sathiVoice).toBe('dad')
     expect(s.profile.name).toMatch(/demo/i)
     expect(integrityProblems(s)).toEqual([])
   })

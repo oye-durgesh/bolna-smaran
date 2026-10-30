@@ -28,8 +28,11 @@ describe('what the ElevenLabs session is told (mock-free, pure)', () => {
     expect(a).toEqual(c)
     expect(a.personId).not.toBe(b.personId)
   })
-  it('the default persona sends no voice override, so the agent keeps its dashboard voice', () => {
+  it('Mummy with the Default chip still requests mom; only self default sends no voice override', () => {
     A.setPersonVoice(mum, 'default'); A.setActivePerson(mum)
+    expect(agentSessionConfig(store.get(), {}).persona).toBe('mom')
+    const me = store.get().people.find((p) => p.relationship === 'self')!.id
+    A.setActivePerson(me)
     expect(agentOverrides(agentSessionConfig(store.get(), {}).persona, 'x')).toBeUndefined()
   })
   it('sends no medical values or foreign identifiers, and never a language override', () => {

@@ -150,5 +150,5 @@ export function HelpLink() {
 export function DemoBanner() {
   const on = useRawStore((s) => !!s.demo.demoFamily)
   if (!on) return null
-  return <div role="note" style={{ marginTop: 12, padding: '8px 12px', borderRadius: 10, background: 'rgba(111,82,108,.1)', border: '1px dashed #6F526C', fontSize: 12, color: '#6F526C', lineHeight: 1.4 }}>Demo family. All names, readings and medicines here are made up. Nothing is saved to a server.</div>
+  return <div role="note" style={{ marginTop: 12, padding: '8px 12px', borderRadius: 10, background: 'rgba(111,82,108,.1)', border: '1px dashed #6F526C', fontSize: 12, color: '#6F526C', lineHeight: 1.4 }}>DEMO DATA. This family, names, readings and medicines are made up for exploring the app. Nothing here is saved to a server.</div>
 }

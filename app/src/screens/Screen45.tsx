@@ -22,7 +22,7 @@ export default function Screen45() {
           </div>
         ))}
         <div style={{ background: '#fff', border: '1px dashed #C08560', borderRadius: 12, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 8 }}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#C08560" strokeWidth="1.5"><circle cx="12" cy="12" r="9" /><path d="M12 8v4M12 16h.01" /></svg><span style={{ fontSize: 14, color: '#C08560' }}>{!extraction?.isMock && extraction?.warnings?.[0] ? extraction.warnings[0] : '1–2 medicines unclear'}</span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#C08560" strokeWidth="1.5"><circle cx="12" cy="12" r="9" /><path d="M12 8v4M12 16h.01" /></svg><span style={{ fontSize: 14, color: '#C08560' }}>{extraction?.isMock ? 'DEMO DATA — sample extraction, not a real file' : extraction?.warnings?.[0] ? extraction.warnings[0] : '1–2 medicines unclear'}</span>
         </div>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10, width: '100%', marginTop: 20 }}>

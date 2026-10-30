@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { ExtractionError, messageFor, runJob, toDraftMedicines, validatePrescriptionFile } from '../extraction'
+import { ExtractionError, chooseExtractorSource, messageFor, runJob, toDraftMedicines, validatePrescriptionFile } from '../extraction'
 import type { Transport } from '../extraction'
 
 const base = { id: 'job1', ownerId: 'x', provider: 'sarvam', sarvamJobId: null, fileName: 'rx.pdf', mime: 'application/pdf', size: 5, language: 'hi-IN', outputFormat: 'md', createdAt: '', updatedAt: '' }
@@ -81,15 +81,32 @@ describe('job polling', () => {
   })
 })
 
+describe('extractor choice (live flow)', () => {
+  it('uses mock only for an explicit demo sample, never as a silent fallback', () => {
+    expect(chooseExtractorSource(true, 'down', true)).toBe('mock')
+    expect(chooseExtractorSource(true, 'down', false)).toBe('supabase')
+    expect(chooseExtractorSource(false, 'configured', false)).toBe('local')
+    expect(chooseExtractorSource(false, 'unconfigured', false)).toBe('local')
+    expect(chooseExtractorSource(false, 'down', false)).toBe('none')
+    expect(chooseExtractorSource(true, 'configured', false)).toBe('supabase')
+  })
+})
+
 describe('draft medicines from real output', () => {
   const result = (m: object) => ({ provider: 'sarvam' as const, isMock: false, rawText: 'RAW', outcome: 'success' as const, medicines: [med(m)] as any, otherInstructions: [], warnings: [] })
   it('keeps only what is written, as unconfirmed drafts, and flags the rest', () => {
-    const [d] = toDraftMedicines(result({}))
-    expect(d).toMatchObject({ status: 'draft', source: 'prescription', times: [], food: 'after', duration: 'course', courseDays: 5, sourceText: expect.stringContaining('Metformin') })
+    const [d] = toDraftMedicines(result({}), 'per_mum')
+    expect(d).toMatchObject({ status: 'draft', source: 'prescription', personId: 'per_mum', times: [], food: 'after', duration: 'course', courseDays: 5, sourceText: expect.stringContaining('Metformin') })
     expect(d.flags).toEqual(expect.arrayContaining(['timing_unclear', 'exact_time_needed']))
   })
+  it('discards mock extraction on a real upload, and keeps labelled drafts when demo is opted in', () => {
+    const mock = { provider: 'mock' as const, isMock: true, rawText: '', outcome: 'success' as const, medicines: [med()] as any, otherInstructions: [], warnings: [] }
+    expect(toDraftMedicines(mock)).toEqual([])
+    const [d] = toDraftMedicines(mock, 'per_mum', { allowDemo: true })
+    expect(d).toMatchObject({ status: 'draft', personId: 'per_mum', extractionProvider: 'mock' })
+  })
   it('missing dose, strength, food and frequency are flagged, never filled in', () => {
-    const [d] = toDraftMedicines(result({ strength: '', dose: '', food: null, frequency: null, duration: null, courseDays: undefined, times: [] }))
+    const [d] = toDraftMedicines(result({ strength: '', dose: '', food: null, frequency: null, duration: null, courseDays: undefined, times: [] }), 'per_mum')
     expect(d.strength).toBe(''); expect(d.dose).toBe(''); expect(d.food).toBeNull(); expect(d.times).toEqual([])
     expect(d.flags).toEqual(expect.arrayContaining(['strength_missing', 'dose_missing', 'food_missing', 'frequency_unclear', 'timing_unclear']))
     expect(d.duration).toBe('ongoing')

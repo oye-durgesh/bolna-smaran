@@ -237,6 +237,8 @@ export interface Prescription {
   fileKey: string // IndexedDB key for the original file
   language?: string // document language sent to the reader (BCP-47, e.g. hi-IN)
   addedAt: string
+  /** Explicit sample prescription. Only this flag uses labelled demo medicines — a real upload never does. */
+  demoSample?: boolean
 }
 
 export interface ExtractionRecord {

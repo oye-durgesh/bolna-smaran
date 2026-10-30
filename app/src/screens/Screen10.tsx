@@ -11,10 +11,16 @@ export default function Screen10() {
   const { go, back, toast } = useApp()
   const meds = useStore((s) => s.medicines)
   const extraction = useStore((s) => s.setup.extraction)
+  const who = useStore((s) => s.activePersonId)
   const forName = useStore((s) => (s.people.filter((p) => !p.archived).length > 1 ? (() => { const p = activePerson(s); return p ? personLabel(p) : '' })() : ''))
   const [error, setError] = useState<string>()
   const [showText, setShowText] = useState(false)
-  const pending = meds.filter((m) => m.status === 'draft' || m.status === 'confirmed')
+  const pending = meds.filter((m) => {
+    if (!(m.status === 'draft' || m.status === 'confirmed')) return false
+    if ((m.personId ?? who) !== who) return false
+    if (extraction?.batchId) return m.extractionBatch === extraction.batchId || m.source !== 'prescription'
+    return true
+  })
   const reviewed = pending.filter((m) => m.status === 'confirmed').length
 
   const next = () => {
@@ -39,8 +45,8 @@ export default function Screen10() {
             {extraction.document.prescriptionDate ? <>Date: {extraction.document.prescriptionDate}</> : null}
           </div>
         )}
-        {extraction?.isMock && pending.some((m) => m.extractionProvider === 'mock') && (
-          <div style={{ fontSize: 12, color: '#C08560', marginTop: 8, lineHeight: 1.4 }}>Sample data from demo mode — these medicines were not read from your file.</div>
+        {extraction?.isMock && (
+          <div style={{ fontSize: 12, color: '#C08560', marginTop: 8, lineHeight: 1.4 }}>DEMO DATA — these sample medicines were not read from a real prescription file.</div>
         )}
         {extraction && !extraction.isMock && (extraction.warnings ?? []).map((w) => <div key={w} style={{ fontSize: 12, color: '#C08560', marginTop: 8, lineHeight: 1.4 }}>{w}</div>)}
         {extraction?.rawText && (
